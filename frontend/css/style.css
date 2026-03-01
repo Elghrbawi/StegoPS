@@ -378,3 +378,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .grid-4{grid-template-columns:1fr}
 .media-tabs{flex-wrap:wrap}
 }
+/* ── FILES PAGE ── */
+.filter-btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.btn-danger:hover{background:rgba(255,77,109,.25);border-color:rgba(255,77,109,.6);color:var(--danger)}
