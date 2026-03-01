@@ -1,6 +1,4 @@
-<?php
-// File: php/includes/footer.php
-?>
+<?php ?>
 </main>
 </div>
 <script src="<?= SITE_URL ?>/frontend/js/main.js"></script>
