@@ -2,107 +2,174 @@
 $pageTitle='Extract';
 $activePage='extract';
 require_once 'php/includes/header.php';
-require_once 'php/includes/stego_handler.php';
 require_once 'php/includes/chain_manager.php';
 $manager=new ChainManager();
-$handler=new StegoHandler();
-$chains=$manager->getUserChains($user['user_id']);
 $algos=$manager->getAllAlgorithms();
-$error=$success=$payload='';
-if($_SERVER['REQUEST_METHOD']==='POST'){
-$stegoKey=$_POST['stego_key']??'';
-$chainData=json_decode($_POST['chain_data']??'[]',true)?:[];
-if(empty($stegoKey)){$error='Stego key is required.';}
-elseif(empty($_FILES['stego_file']['name'])||$_FILES['stego_file']['error']!==UPLOAD_ERR_OK){$error='Please upload a valid stego file.';}
-else{
-$uploaded=$handler->uploadCarrier($_FILES['stego_file'],$user['user_id']);
-if(!$uploaded['success']){$error=$uploaded['message'];}
-else{
-$res=$handler->extract($user['user_id'],$uploaded['file_id'],$stegoKey,$chainData);
-$res['success']?($success=$res['message'])&&($payload=$res['payload']):($error=$res['message']);
-}
-}
+$chainsWithSteps=$isGuest??false?[]:$manager->getUserChainsWithSteps($user['user_id']);
+$userSk=htmlspecialchars($user['steg_key']??'');
+$chainKeysMap=[];
+foreach($chainsWithSteps as $c){
+$stepsArr=array_map(fn($s)=>[$s['algo_slug'],$s['algo_name'],$s['category'],'',''],$c['steps']);
+$chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 }
 ?>
-<div class="page-header">
+<div class="page-header" style="margin-bottom:16px">
 <div>
 <div class="page-title">Extract Payload</div>
-<div class="page-sub">// UPLOAD STEGO FILE → APPLY CHAIN → REVEAL</div>
+<div class="page-sub">// UPLOAD STEGO FILE &rarr; DECODE &rarr; REVEAL</div>
 </div>
 </div>
-<?php if($error): ?><div class="alert alert-error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
-<?php if($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
-<form method="POST" enctype="multipart/form-data">
-<input type="hidden" name="chain_data" id="chain-data" value="[]">
-<div class="grid-2">
-<div style="display:flex;flex-direction:column;gap:16px">
-<div class="card">
-<div class="card-title">Step 1 — Upload Stego File</div>
-<div class="upload-zone" onclick="document.getElementById('stego-input').click()">
-<div class="upload-icon">🔍</div>
+<div class="embed-layout extract-layout" id="extract-layout">
+<div class="embed-left">
+<div class="card" id="card-stego-upload">
+<div class="card-title">01 &mdash; Stego File</div>
+<div class="upload-zone" id="stego-drop" onclick="document.getElementById('stego-input').click()">
+<div class="upload-icon">&#9673;</div>
 <div class="upload-text">Click or drag to upload stego file</div>
-<div class="upload-sub">PNG / WAV / MP4 supported</div>
+<div class="upload-sub">PNG / WAV / MP4 &mdash; file with hidden payload</div>
 </div>
-<input type="file" id="stego-input" name="stego_file" style="display:none" onchange="handleFileSelect(this,'stego-preview')" accept="image/*,audio/*,video/*">
+<input type="file" id="stego-input" style="display:none" onchange="handleFileSelect(this,'stego-preview')" accept="image/*,audio/*,video/*">
 <div id="stego-preview"></div>
 </div>
-<div class="card">
-<div class="card-title">Step 2 — Stego Key</div>
-<div class="input-group" style="margin-bottom:0">
+<div class="card" id="card-stego-key">
+<div class="card-title">02 &mdash; Stego Key</div>
+<div class="input-group" style="margin-bottom:6px">
 <label class="input-label">Steganography Key</label>
 <div class="input-wrap">
-<span class="input-icon">⬡</span>
-<input type="password" name="stego_key" class="input has-icon" placeholder="Enter the stego key used during embed" required>
-<button type="button" class="input-eye" onclick="togglePass(this.previousElementSibling.id||'sk',this)">◉</button>
+<span class="input-icon">&#11041;</span>
+<input type="password" id="extract-stego-key" class="input has-icon" placeholder="Key used during embedding" value="<?= $userSk ?>" oninput="persistExtract()">
+<button type="button" class="input-eye" onclick="togglePass('extract-stego-key',this)">&#9673;</button>
 </div>
 </div>
+<div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted)">Must match exactly what was used during embedding.</div>
 </div>
 </div>
-<div style="display:flex;flex-direction:column;gap:16px">
-<div class="card">
-<div class="card-title">Step 3 — Decryption Chain</div>
-<div class="input-group">
-<label class="input-label">Chain Used for Embedding</label>
-<select name="saved_chain" class="select-input">
-<option value="">— Use chain builder below —</option>
-<?php foreach($chains as $c): ?>
-<option value="<?= $c['chain_id'] ?>"><?= htmlspecialchars($c['chain_name']) ?> (<?= $c['layer_count'] ?> layers)</option>
+<div class="embed-right" id="extract-right">
+<div class="card" id="card-extract-chain">
+<div class="card-title">03 &mdash; Decryption Chain</div>
+<?php if(!empty($chainsWithSteps)): ?>
+<div class="input-group" style="margin-bottom:10px">
+<label class="input-label">Load Saved Chain</label>
+<div class="input-wrap">
+<span class="input-icon" style="font-size:12px">&#9939;</span>
+<select class="input has-icon select-input" id="saved-chain-select" onchange="loadSavedChainExtract(this.value)" style="font-family:'Space Mono',monospace;font-size:11px">
+<option value="">-- Select a saved chain --</option>
+<?php foreach($chainsWithSteps as $c): ?>
+<option value="<?= addslashes($chainKeysMap[$c['chain_id']]??'') ?>"><?= htmlspecialchars($c['chain_name']) ?> (<?= $c['layer_count'] ?> layers)</option>
 <?php endforeach; ?>
 </select>
 </div>
-<div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);margin-bottom:10px">⚠ Must use exact same chain as embedding — decryption applies in reverse.</div>
-<div>
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-<span style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted)">PIPELINE — <span id="chain-count">0</span> LAYERS</span>
-<div style="display:flex;align-items:center;gap:7px">
-<div class="strength-bar"><div class="strength-fill" id="strength-fill" style="width:0%"></div></div>
-<span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--accent)" id="strength-val">0%</span>
-<button type="button" class="btn btn-ghost" onclick="clearChain()" style="padding:3px 8px;font-size:10px">✕</button>
+</div>
+<?php endif; ?>
+<div class="input-group" style="margin-bottom:12px">
+<label class="input-label">Paste Chain Key <span class="optional-tag">(auto-loads chain)</span></label>
+<div class="input-wrap">
+<span class="input-icon" style="font-family:'Space Mono',monospace;font-size:10px">&#11041;</span>
+<input type="text" class="input has-icon" id="chain-key-input" placeholder="Paste the chain key from sender..." style="font-family:'JetBrains Mono',monospace;font-size:11px" oninput="autoDecodeChainKey(this.value)" onpaste="setTimeout(()=>autoDecodeChainKey(this.value),50)">
 </div>
 </div>
-<div id="chain-steps" style="max-height:180px;overflow-y:auto"><div class="chain-empty" style="padding:16px;font-size:10px">⛓ Add algorithms</div></div>
-</div>
-<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px">
-<?php foreach($algos as $cat=>$list): ?>
-<?php foreach(array_slice($list,0,2) as $a): ?>
+<div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-bottom:10px">Or build the chain manually below &mdash; must be exact same order as embedding.</div>
+<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">
+<?php foreach($algos as $cat=>$list): foreach(array_slice($list,0,2) as $a): ?>
 <div class="algo-chip <?= $cat ?>" style="font-size:10px;padding:4px 8px" onclick="addToChain('<?= addslashes($a['algo_name']) ?>','<?= $cat ?>','<?= $a['algo_slug'] ?>')">
 <?= htmlspecialchars($a['algo_name']) ?> <span style="opacity:.5">+</span>
 </div>
-<?php endforeach; ?>
-<?php endforeach; ?>
+<?php endforeach; endforeach; ?>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+<span style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--text-muted)">CHAIN &mdash; <span id="chain-count">0</span> LAYERS</span>
+<div style="display:flex;align-items:center;gap:7px">
+<div class="strength-bar"><div class="strength-fill" id="strength-fill" style="width:0%"></div></div>
+<span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--accent)" id="strength-val">0%</span>
+<button type="button" class="btn btn-ghost" onclick="clearChain()" style="padding:3px 8px;font-size:10px">&#10005;</button>
 </div>
 </div>
-<button type="submit" class="btn btn-primary btn-full btn-lg">⬆ EXTRACT &amp; DECRYPT</button>
-<?php if($payload): ?>
-<div class="card card-accent">
-<div class="card-title" style="color:var(--accent)">✓ Extraction Successful — Integrity Verified</div>
-<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-dim);margin-bottom:14px;max-height:180px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">
-<?= htmlspecialchars($payload) ?>
+<div id="chain-steps" class="embed-chain-steps"></div>
+<input type="hidden" id="chain-data" value="[]">
 </div>
-<button type="button" class="btn btn-ghost" onclick="copyText(<?= json_encode($payload) ?>,this)">📋 Copy Message</button>
+<button class="extract-decrypt-btn embed-action-btn" id="extract-btn" onclick="runExtract()">
+<div class="btn-decrypt-anim">
+<span class="decrypt-orb"></span>
+<span class="decrypt-orb"></span>
+<span class="decrypt-orb"></span>
 </div>
-<?php endif; ?>
+<span class="btn-text">&#11041; EXTRACT &amp; DECRYPT</span>
+<span class="btn-loader" style="display:none">&#9676;</span>
+</button>
+<div class="process-terminal extract-terminal" id="extract-terminal" style="display:none">
+<div class="terminal-header">
+<span class="terminal-dot red"></span>
+<span class="terminal-dot yellow"></span>
+<span class="terminal-dot green"></span>
+<span class="terminal-title">StegoPS Decryption Engine</span>
+</div>
+<div class="terminal-body" id="extract-term-body"></div>
+<div class="payload-reveal" id="payload-reveal" style="display:none">
+<div class="payload-reveal-label">DECRYPTED PAYLOAD</div>
+<div class="payload-reveal-content" id="payload-content"></div>
+<div style="display:flex;gap:8px;margin-top:10px">
+<button class="btn btn-primary btn-sm" id="copy-payload-btn" onclick="copyPayload()">&#11041; Copy</button>
 </div>
 </div>
-</form>
+</div>
+</div>
+</div>
+<script>
+const EXTRACT_URL='<?= SITE_URL ?>/php/api/process_ajax.php';
+function loadSavedChainExtract(key){
+if(!key)return;
+try{
+const dec=JSON.parse(atob(key));
+chain=dec.map(s=>({slug:s[0],name:s[1],category:s[2],key:s[3]||'',key2:s[4]||''}));
+renderChain();
+showToast('Chain loaded \u2014 '+chain.length+' layers');
+}catch(e){showToast('Failed to load chain');}
+}
+function persistExtract(){
+try{localStorage.setItem('extract_stego_key',document.getElementById('extract-stego-key')?.value||'');}catch(e){}
+}
+function restoreExtract(){
+try{
+const k=localStorage.getItem('extract_stego_key');
+if(k&&document.getElementById('extract-stego-key'))document.getElementById('extract-stego-key').value=k;
+}catch(e){}
+}
+let extractedPayload='';
+function copyPayload(){
+navigator.clipboard.writeText(extractedPayload).then(()=>{showToast('Payload copied!');});
+}
+function runExtract(){
+const stegoKey=document.getElementById('extract-stego-key')?.value||'';
+const stegoFile=document.getElementById('stego-input')?.files[0];
+const btn=document.getElementById('extract-btn');
+if(!stegoFile){showStegError('Upload a stego file first');return;}
+if(!stegoKey){showStegError('Enter the stego key');return;}
+setLoading(btn,true);
+showTerminal('extract-terminal');
+const termBody=document.getElementById('extract-term-body');
+const revealEl=document.getElementById('payload-reveal');
+revealEl.style.display='none';
+const steps=['Initializing decryption session...','Loading stego file: '+stegoFile.name,'Detecting steganography technique...','Locating hidden payload region...',chain.length>0?('Reversing encryption chain \u2014 '+chain.length+' layer'+(chain.length>1?'s in reverse order':'')+':'):'No chain \u2014 expecting raw payload...',...chain.slice().reverse().map((s,i)=>'  Layer '+(i+1)+' (reverse): '+s.name),'Extracting hidden bytes...','Verifying payload integrity...','Decoding payload data...'];
+animateTerminal(termBody,steps,()=>{
+const fd=new FormData();
+fd.append('action','extract');
+fd.append('stego_key',stegoKey);
+fd.append('chain_data',JSON.stringify(chain));
+fd.append('stego_file',stegoFile);
+fetch(EXTRACT_URL,{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+setLoading(btn,false);
+if(d.success){
+addTermLine(termBody,'','<span style="color:var(--accent)">\u2713 EXTRACTION SUCCESSFUL</span>');
+extractedPayload=d.payload||'';
+document.getElementById('payload-content').textContent=extractedPayload;
+revealEl.style.display='block';
+}else{
+addTermLine(termBody,'err','\u2717 '+d.message);
+showStegError(d.message);
+}
+}).catch(e=>{setLoading(btn,false);addTermLine(termBody,'err','\u2717 Network error');showStegError('Network error');});
+});
+}
+window.addEventListener('DOMContentLoaded',()=>{restoreExtract();renderChain();});
+</script>
 <?php require_once 'php/includes/footer.php'; ?>

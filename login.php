@@ -48,7 +48,9 @@ $fromRegister  = isset($_GET['from']) && $_GET['from']==='register';
 <div class="input-wrap">
 <span class="input-icon">◎</span>
 <input type="text" class="input has-icon" id="login-user" placeholder="Who are you?" autocomplete="username">
+<span class="input-status" id="login-user-status"></span>
 </div>
+<div class="field-hint" id="login-user-hint"></div>
 </div>
 <div class="input-group" style="margin-bottom:20px">
 <label class="input-label">Password</label>
@@ -76,6 +78,7 @@ No account? <a href="<?= SITE_URL ?>/register.php" class="auth-switch-link" oncl
 <script src="<?= SITE_URL ?>/frontend/js/main.js"></script>
 <script>
 initBgCanvas();
+initLoginCheck('login-user','login-user-status','login-user-hint','<?= SITE_URL ?>/php/api/check_availability.php');
 const REDIRECT = '<?= addslashes($redirectParam ?: SITE_URL.'/dashboard.php') ?>';
 const loginUser = document.getElementById('login-user');
 const loginPass = document.getElementById('login-pass');
