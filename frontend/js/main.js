@@ -246,6 +246,7 @@ const cd=document.getElementById('chain-data');if(cd)cd.value=JSON.stringify(cha
 container.innerHTML='';
 if(chain.length===0){
 container.innerHTML='<div class="chain-empty"><span style="font-size:28px;filter:grayscale(1)">\u26D3</span><span>No operations yet</span><span style="font-size:10px;color:var(--text-muted)">Click an algorithm to start \u2192</span></div>';
+updateChainShareKey();
 return;
 }
 chain.forEach((step,i)=>{
@@ -476,3 +477,61 @@ function toggleSwitch(el){
 el.classList.toggle('on');
 const t=el.dataset.target;if(t){const el2=document.getElementById(t);if(el2)el2.style.display=el.classList.contains('on')?'block':'none';}
 }
+function initBtnRain(canvasId,chars,color){
+const canvas=document.getElementById(canvasId);
+if(!canvas)return;
+const btn=canvas.closest('button');
+if(!btn)return;
+const ctx=canvas.getContext('2d');
+let W=0,H=0,cols=[],running=false,raf=null;
+function resize(){
+const r=canvas.getBoundingClientRect();
+W=canvas.width=Math.round(r.width||btn.offsetWidth||200);
+H=canvas.height=Math.round(r.height||btn.offsetHeight||60);
+cols=[];
+const spacing=28;
+const count=Math.ceil(W/spacing)+2;
+for(let i=0;i<count;i++){
+cols.push({
+x:i*spacing+Math.random()*spacing,
+y:Math.random()*-H*2,
+speed:1.4+Math.random()*1.8,
+char:chars[Math.floor(Math.random()*chars.length)],
+size:14+Math.floor(Math.random()*10),
+alpha:0.12+Math.random()*0.22,
+changeTimer:Math.floor(Math.random()*40)
+});
+}
+}
+function draw(){
+if(!running)return;
+ctx.clearRect(0,0,W,H);
+cols.forEach(c=>{
+c.y+=c.speed;
+if(c.y>H+30){
+c.y=Math.random()*-60-20;
+c.x=Math.random()*W;
+c.speed=1.4+Math.random()*1.8;
+c.char=chars[Math.floor(Math.random()*chars.length)];
+}
+c.changeTimer--;
+if(c.changeTimer<=0){c.char=chars[Math.floor(Math.random()*chars.length)];c.changeTimer=20+Math.floor(Math.random()*40);}
+ctx.font=c.size+'px serif';
+ctx.globalAlpha=c.alpha;
+ctx.fillStyle=color;
+ctx.fillText(c.char,c.x,c.y);
+});
+ctx.globalAlpha=1;
+raf=requestAnimationFrame(draw);
+}
+function start(){if(running)return;W=0;resize();running=true;draw();}
+function stop(){running=false;if(raf)cancelAnimationFrame(raf);ctx.clearRect(0,0,W,H);}
+btn.addEventListener('mouseenter',start);
+btn.addEventListener('mouseleave',stop);
+btn.addEventListener('focus',start);
+btn.addEventListener('blur',stop);
+}
+document.addEventListener('DOMContentLoaded',function(){
+initBtnRain('embed-rain',['\u26D3','\u26D3\uFE0F','\uD83D\uDD17','\u2022','\u25AA','\u26AC'],'rgba(5,12,14,0.6)');
+initBtnRain('extract-rain',['\uD83D\uDD12','\uD83D\uDD13','\u26BF','\u2022','\u25AA','\u26AC'],'rgba(200,140,255,0.55)');
+});

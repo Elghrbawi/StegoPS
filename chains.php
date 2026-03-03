@@ -23,10 +23,16 @@ $result['success']?($success=$result['message']):($error=$result['message']);
 $manager->deleteChain((int)$_POST['chain_id'],$user['user_id']);
 $success='Chain deleted.';
 }
+}
+header('Location: '.SITE_URL.'/chains.php'.($success?'?msg='.urlencode($success):($error?'?err='.urlencode($error):'')));
+exit;
+}
+if(!$isGuest){
 $chainsWithSteps=$manager->getUserChainsWithSteps($user['user_id']);
 $chains=$chainsWithSteps;
 }
-}
+if(isset($_GET['msg']))$success=htmlspecialchars($_GET['msg']);
+if(isset($_GET['err']))$error=htmlspecialchars($_GET['err']);
 $chainKeysMap=[];
 foreach($chainsWithSteps as $c){
 $stepsArr=array_map(fn($s)=>[$s['algo_slug'],$s['algo_name'],$s['category'],'',''],$c['steps']);
@@ -38,13 +44,7 @@ $chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 <div class="page-title">Chain Builder</div>
 <div class="page-sub">// CLICK ALGORITHMS TO BUILD YOUR ENCRYPTION PIPELINE</div>
 </div>
-<?php if($isGuest): ?>
-<button class="btn btn-primary btn-sm" onclick="document.getElementById('upgrade-modal').style.display='flex'">&#11041; Save Chains &mdash; Create Account</button>
-<?php endif; ?>
 </div>
-<?php if($isGuest): ?>
-<div class="alert alert-warning" style="margin-bottom:14px">&#128101; Guest mode: chains are saved in your browser. <a href="#" onclick="document.getElementById('upgrade-modal').style.display='flex';return false" style="color:var(--warning);text-decoration:underline">Create an account</a> to persist them permanently.</div>
-<?php endif; ?>
 <form method="POST" id="chain-form">
 <input type="hidden" name="action" value="save">
 <input type="hidden" name="chain_data" id="chain-data" value="[]">
@@ -80,7 +80,7 @@ $chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 </div>
 </div>
 <div class="chain-steps-list" id="chain-steps">
-<div class="chain-empty"><span style="font-size:32px;filter:grayscale(1)">&#9939;</span><span>No operations yet</span><span style="font-size:10px;color:var(--text-muted)">Start your first embed &#8594;</span></div>
+<div class="chain-empty chainer"><span style="font-size:32px;filter:grayscale(1);">&#9939;</span><span>No operations yet</span><span style="font-size:10px;color:var(--text-muted)">Start your first embed &#8594;</span></div>
 </div>
 <div id="chain-share-row" class="chain-share-row" style="display:none">
 <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:1px;white-space:nowrap">CHAIN KEY</span>
@@ -108,9 +108,6 @@ $chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 <div class="divider"></div>
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
 <div class="card-title" style="margin-bottom:0">Saved Chains</div>
-<?php if($isGuest): ?>
-<span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted)">Stored in browser &mdash; create account to persist</span>
-<?php endif; ?>
 </div>
 <div id="chains-list-wrap">
 <?php if(!$isGuest && !empty($chains)): ?>
@@ -125,15 +122,11 @@ $chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 <td><span class="badge badge-success"><?= $c['layer_count'] ?> layers</span></td>
 <td style="font-family:'Space Mono',monospace;font-size:11px"><?= $c['use_count']??0 ?></td>
 <td style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted)"><?= date('d M Y',strtotime($c['created_at'])) ?></td>
-<td>
+<td style="max-width:100px">
 <button class="btn btn-ghost" onclick="copyText('<?= addslashes($chainKeysMap[$c['chain_id']]??'') ?>',this)" style="padding:3px 8px;font-size:9px">&#11041; Copy</button>
 </td>
 <td>
-<form method="POST" style="display:inline" onsubmit="return confirm('Delete this chain?')">
-<input type="hidden" name="action" value="delete">
-<input type="hidden" name="chain_id" value="<?= $c['chain_id'] ?>">
-<button type="submit" class="btn btn-danger" style="padding:4px 10px;font-size:10px">Delete</button>
-</form>
+<button class="btn btn-danger" onclick="openDeleteChainModal(<?= $c['chain_id'] ?>,'<?= addslashes(htmlspecialchars($c['chain_name'])) ?>')" style="padding:4px 10px;font-size:10px">Delete</button>
 </td>
 </tr>
 <?php endforeach; ?>
@@ -151,34 +144,31 @@ $chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 <div id="guest-chains-list"></div>
 <?php endif; ?>
 </div>
-<div id="guest-convert-overlay" class="guest-convert-overlay" style="display:none">
-<div class="guest-convert-inner">
-<div class="card" style="margin-bottom:0;padding:0;overflow:hidden;border-color:rgba(0,229,200,.2)">
-<div class="gc-terminal-header">
-<div class="terminal-dot red"></div>
-<div class="terminal-dot yellow"></div>
-<div class="terminal-dot green"></div>
-<span style="font-size:10px;color:rgba(0,229,200,.4);margin-left:6px;letter-spacing:.5px">account.convert</span>
-</div>
-<div class="gc-terminal-body" id="gc-terminal-body"></div>
-</div>
-<div class="gc-bar-wrap">
-<div class="gc-bar-track"><div class="gc-bar-fill" id="gc-bar-fill"></div></div>
-<div class="gc-status" id="gc-status">Preparing migration...</div>
+<div id="delete-chain-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+<div class="modal-card animate-in" style="max-width:360px;text-align:center">
+<div style="font-size:32px;margin-bottom:10px">&#9939;</div>
+<div class="modal-title" style="color:var(--danger)">Delete Chain?</div>
+<div class="modal-sub" id="delete-chain-name" style="font-family:'JetBrains Mono',monospace;font-size:12px;margin-bottom:6px"></div>
+<div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">This chain will be permanently removed.</div>
+<div style="display:flex;gap:10px;justify-content:center">
+<form method="POST" id="delete-chain-form">
+<input type="hidden" name="action" value="delete">
+<input type="hidden" name="chain_id" id="delete-chain-id" value="">
+<button type="submit" class="btn btn-danger">&#10005; Delete</button>
+</form>
+<button class="btn btn-ghost" onclick="document.getElementById('delete-chain-modal').style.display='none'">Cancel</button>
 </div>
 </div>
 </div>
 <script>
 const IS_GUEST = <?= $isGuest ? 'true' : 'false' ?>;
-const CHAINS_URL = '<?= SITE_URL ?>/php/api/chains_ajax.php';
 function filterAlgos(q) {
 q = q.toLowerCase().trim();
 let anyVisible = false;
 document.querySelectorAll('.algo-cat-group').forEach(group => {
 let groupVisible = false;
 group.querySelectorAll('.algo-chip').forEach(chip => {
-const name = chip.dataset.name || '';
-const show = !q || name.includes(q);
+const show = !q || (chip.dataset.name||'').includes(q);
 chip.style.display = show ? '' : 'none';
 if (show) groupVisible = true;
 });
@@ -193,6 +183,11 @@ if(IS_GUEST) loadGuestChains();
 const row = document.getElementById('chain-share-row');
 if(row) row.style.display = 'none';
 });
+function openDeleteChainModal(id, name) {
+document.getElementById('delete-chain-id').value = id;
+document.getElementById('delete-chain-name').textContent = name;
+document.getElementById('delete-chain-modal').style.display = 'flex';
+}
 function doSaveChain() {
 if(chain.length === 0) { showToast('Add at least one algorithm first'); return; }
 if(IS_GUEST) {
@@ -207,11 +202,7 @@ function updateChainShareKey() {
 const el = document.getElementById('chain-share-key-val');
 const row = document.getElementById('chain-share-row');
 if(!el) return;
-if(chain.length === 0) {
-if(row) row.style.display = 'none';
-el.textContent = '\u2014';
-return;
-}
+if(chain.length === 0) { if(row) row.style.display = 'none'; el.textContent = '\u2014'; return; }
 if(row) row.style.display = 'flex';
 el.textContent = generateChainKey();
 }
@@ -244,7 +235,7 @@ document.getElementById('chain-name-input').value = '';
 loadGuestChains();
 }
 function deleteGuestChain(i) {
-if(!confirm('Delete this chain?')) return;
+document.getElementById('delete-chain-modal').style.display = 'none';
 let gc = [];
 try { gc = JSON.parse(localStorage.getItem('stego_guest_chains') || '[]'); } catch(e) {}
 gc.splice(i, 1);

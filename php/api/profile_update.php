@@ -46,9 +46,20 @@ exit;
 }
 /* ── REGEN STEG KEY ── */
 if ($action === 'regen_steg_key') {
-$newKey = bin2hex(random_bytes(16));
+$keyLen = max(16, min(64, (int)($_POST['key_length'] ?? 32)));
+$newKey = bin2hex(random_bytes((int)ceil($keyLen/2)));
+$newKey = substr($newKey, 0, $keyLen);
 $db->query("UPDATE users SET steg_key=? WHERE user_id=?",[$newKey,$userId]);
 echo json_encode(['success'=>true,'steg_key'=>$newKey,'message'=>'New steg key generated']);
+exit;
+}
+/* ── SAVE CUSTOM STEG KEY ── */
+if ($action === 'save_custom_steg_key') {
+$key = trim($_POST['steg_key'] ?? '');
+if (strlen($key) < 1) { echo json_encode(['success'=>false,'message'=>'Key cannot be empty']); exit; }
+if (strlen($key) > 512) { echo json_encode(['success'=>false,'message'=>'Key too long (max 512)']); exit; }
+$db->query("UPDATE users SET steg_key=? WHERE user_id=?",[$key,$userId]);
+echo json_encode(['success'=>true,'steg_key'=>$key,'message'=>'Custom key saved']);
 exit;
 }
 /* ── DELETE ACCOUNT ── */

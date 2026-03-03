@@ -119,8 +119,8 @@ Required to extract the payload. Share with the recipient.<br>
 </div>
 </div>
 <button class="hide-secure-btn embed-action-btn" id="embed-btn" onclick="runEmbed()">
-<div class="btn-river"><div class="btn-river-inner">&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;&#9935;&#9135;</div></div>
-<span class="btn-text">&#11041; HIDE &amp; SECURE</span>
+<canvas class="btn-rain-canvas" id="embed-rain" aria-hidden="true"></canvas>
+<span class="btn-text">&#9939; HIDE &amp; SECURE</span>
 <span class="btn-loader" style="display:none">&#9676;</span>
 </button>
 <div class="process-terminal" id="embed-terminal" style="display:none">

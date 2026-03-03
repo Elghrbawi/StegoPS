@@ -98,13 +98,14 @@ $fc=$isStego?'stego':($f['file_type']??'');
 </td>
 <td>
 <div style="display:flex;gap:5px;flex-wrap:wrap">
-<a href="<?= SITE_URL ?>/php/api/download.php?id=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px">⬇</a>
+<a href="<?= SITE_URL ?>/php/api/download.php?id=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Download">&#11015;</a>
 <?php if($isStego): ?>
-<a href="<?= SITE_URL ?>/share.php?file=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px">⬡</a>
+<a href="<?= SITE_URL ?>/extract.php?file=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Extract">&#128275;</a>
+<a href="<?= SITE_URL ?>/share.php?file=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Share">&#11041;</a>
 <?php else: ?>
-<a href="<?= SITE_URL ?>/embed.php?carrier=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px">⬇</a>
+<a href="<?= SITE_URL ?>/embed.php?carrier=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Embed">&#9939;</a>
 <?php endif; ?>
-<button class="btn btn-danger btn-sm" style="padding:4px 10px;font-size:10px" onclick="confirmDelete(<?= $f['file_id'] ?>,'<?= addslashes(htmlspecialchars($f['original_filename'])) ?>')">✕</button>
+<button class="btn btn-danger btn-sm" style="padding:4px 10px;font-size:10px" onclick="confirmDelete(<?= $f['file_id'] ?>,'<?= addslashes(htmlspecialchars($f['original_filename'])) ?>')" title="Delete">&#10005;</button>
 </div>
 </td>
 </tr>

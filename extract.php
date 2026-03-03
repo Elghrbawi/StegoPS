@@ -88,12 +88,8 @@ $chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 <input type="hidden" id="chain-data" value="[]">
 </div>
 <button class="extract-decrypt-btn embed-action-btn" id="extract-btn" onclick="runExtract()">
-<div class="btn-decrypt-anim">
-<span class="decrypt-orb"></span>
-<span class="decrypt-orb"></span>
-<span class="decrypt-orb"></span>
-</div>
-<span class="btn-text">&#11041; EXTRACT &amp; DECRYPT</span>
+<canvas class="btn-rain-canvas btn-rain-canvas-decrypt" id="extract-rain" aria-hidden="true"></canvas>
+<span class="btn-text">&#128274; EXTRACT &amp; DECRYPT</span>
 <span class="btn-loader" style="display:none">&#9676;</span>
 </button>
 <div class="process-terminal extract-terminal" id="extract-terminal" style="display:none">
