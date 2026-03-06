@@ -122,20 +122,27 @@ created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 /* ── INDEXES ── */
+DROP INDEX IF EXISTS idx_chains_user ON encryption_chains;
 CREATE INDEX idx_chains_user ON encryption_chains(user_id);
+DROP INDEX IF EXISTS idx_steps_chain ON chain_steps;
 CREATE INDEX idx_steps_chain ON chain_steps(chain_id,step_order);
+DROP INDEX IF EXISTS idx_files_user ON media_files;
 CREATE INDEX idx_files_user ON media_files(user_id,file_type);
+DROP INDEX IF EXISTS idx_ops_user ON stego_operations;
 CREATE INDEX idx_ops_user ON stego_operations(user_id,created_at);
+DROP INDEX IF EXISTS idx_share_token ON shared_files;
 CREATE INDEX idx_share_token ON shared_files(share_token);
+DROP INDEX IF EXISTS idx_logs_user ON operation_logs;
 CREATE INDEX idx_logs_user ON operation_logs(user_id,created_at);
+DROP INDEX IF EXISTS idx_logs_ip ON operation_logs;
 CREATE INDEX idx_logs_ip ON operation_logs(ip_address,created_at);
 /* ── SEED: ENCRYPTION ALGORITHMS ── */
-INSERT INTO encryption_algorithms (algo_name,algo_slug,category,requires_key,description,python_module) VALUES
+INSERT IGNORE INTO encryption_algorithms (algo_name,algo_slug,category,requires_key,description,python_module) VALUES
 ('Caesar Cipher','caesar','classical',1,'Shifts each byte by a key-derived value','algos.classical.caesar'),
 ('Vigenere Cipher','vigenere','classical',1,'Polyalphabetic byte substitution with repeating key','algos.classical.vigenere'),
 ('Playfair Cipher','playfair','classical',1,'Digraph substitution on a key-derived grid','algos.classical.playfair'),
 ('Rail Fence Cipher','rail_fence','classical',1,'Zigzag transposition across multiple rails','algos.classical.rail_fence'),
-('Atbash Cipher','atbash','classical',0,'Reverses byte values: b → (255 - b)','algos.classical.atbash'),
+('Atbash Cipher','atbash','classical',0,'Reverses byte values: b (255 - b)','algos.classical.atbash'),
 ('ROT13','rot13','classical',0,'Rotates letter bytes by 13 positions','algos.classical.rot13'),
 ('Beaufort Cipher','beaufort','classical',1,'Symmetric polyalphabetic cipher','algos.classical.beaufort'),
 ('Affine Cipher','affine','classical',1,'Linear byte transformation: (a*b + b) mod 256','algos.classical.affine'),
@@ -166,7 +173,7 @@ INSERT INTO encryption_algorithms (algo_name,algo_slug,category,requires_key,des
 ('MD5 Integrity','md5','hashing',0,'MD5 hash integrity layer (legacy support)','algos.hashing.md5'),
 ('HMAC-SHA256','hmac_sha256','hashing',1,'Keyed-hash for authenticated integrity','algos.hashing.hmac_sha256');
 /* ── DEFAULT ADMIN ── */
-INSERT INTO users (username,email,password_hash,salt,steg_key,role,is_verified,is_active) VALUES
+INSERT IGNORE INTO users (username,email,password_hash,salt,steg_key,role,is_verified,is_active) VALUES
 ('admin','admin@stegops.local','$2y$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi','stegops_default_salt',SUBSTR(MD5(RAND()),1,32),'admin',1,1);
 SELECT 'StegoPS database setup complete!' AS Status;
 SELECT COUNT(*) AS algorithms_loaded FROM encryption_algorithms;

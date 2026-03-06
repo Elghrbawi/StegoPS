@@ -6,6 +6,7 @@ header('Cache-Control: no-store');
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_encode(['success'=>false,'message'=>'Method not allowed']); exit; }
 $auth = new Auth();
 $action = $_POST['action'] ?? '';
+/* ── LOGIN ── */
 if ($action === 'login') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -16,6 +17,7 @@ if ($action === 'login') {
     else { echo json_encode(['success'=>false,'message'=>$result['message'],'field'=>'password']); }
     exit;
 }
+/* ── REGISTER ── */
 if ($action === 'register') {
     $username = trim($_POST['username'] ?? '');
     $email    = trim($_POST['email'] ?? '');
@@ -39,16 +41,19 @@ if ($action === 'register') {
     } else { echo json_encode(['success'=>false,'message'=>$result['message']]); }
     exit;
 }
+/* ── GUEST ── */
 if ($action === 'guest') {
     $auth->startGuestSession();
     echo json_encode(['success'=>true,'redirect'=>SITE_URL.'/dashboard.php','guest'=>true]);
     exit;
 }
+/* ── GUEST UPGRADE ── */
 if ($action === 'guest_upgrade') {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $email    = trim($_POST['email'] ?? '');
-    $guestData = $_POST['guest_data'] ?? '[]';
+    $username    = trim($_POST['username'] ?? '');
+    $password    = $_POST['password'] ?? '';
+    $email       = trim($_POST['email'] ?? '');
+    $guestData   = $_POST['guest_data'] ?? '[]';
+    $guestChains = $_POST['guest_chains'] ?? '[]';
     if (empty($username) || strlen($username) < 3) { echo json_encode(['success'=>false,'message'=>'Username too short','field'=>'username']); exit; }
     if (!preg_match('/^[a-zA-Z0-9_.\-]+$/', $username)) { echo json_encode(['success'=>false,'message'=>'Invalid username characters','field'=>'username']); exit; }
     if (empty($password)) { echo json_encode(['success'=>false,'message'=>'Set a password','field'=>'password']); exit; }
@@ -57,7 +62,25 @@ if ($action === 'guest_upgrade') {
     if ($existing) { echo json_encode(['success'=>false,'message'=>'Username taken','field'=>'username']); exit; }
     $result = $auth->register($username, $email, $password);
     if ($result['success']) {
-        $auth->login($username, $password, $_SERVER['REMOTE_ADDR']);
+        $loginResult = $auth->login($username, $password, $_SERVER['REMOTE_ADDR']);
+        if ($loginResult['success']) {
+            $userId = (int)$_SESSION['user_id'];
+            $chains = json_decode($guestChains, true);
+            if (is_array($chains) && count($chains) > 0) {
+                require_once __DIR__ . '/../includes/chain_manager.php';
+                $mgr = new ChainManager();
+                foreach ($chains as $gc) {
+                    if (!isset($gc['name']) || !isset($gc['steps']) || !is_array($gc['steps'])) continue;
+                    $steps = array_map(fn($s) => [
+                        'slug'     => $s['slug'] ?? '',
+                        'name'     => $s['name'] ?? '',
+                        'category' => $s['category'] ?? 'custom',
+                        'key_hint' => null
+                    ], $gc['steps']);
+                    $mgr->saveChain($userId, (string)$gc['name'], $steps, '');
+                }
+            }
+        }
         echo json_encode(['success'=>true,'redirect'=>SITE_URL.'/dashboard.php']);
     } else { echo json_encode(['success'=>false,'message'=>$result['message']]); }
     exit;
