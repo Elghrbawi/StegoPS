@@ -157,10 +157,24 @@ def extract():
 
     try:
         encrypted = steg_mod.extract(stego_path, stego_key, steg_method)
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-    except Exception as e:
-        return jsonify({'error': f'Extract failed: {e}'}), 500
+    except Exception as first_err:
+        # Image payloads may come from different embed methods; auto-fallback helps recovery.
+        if file_type != 'image':
+            return jsonify({'error': f'Extract failed: {first_err}'}), 500
+        extracted = None
+        last_err = first_err
+        for m in ['lsb', 'xor_pixel', 'alpha', 'img_in_img']:
+            if m == steg_method:
+                continue
+            try:
+                extracted = steg_mod.extract(stego_path, stego_key, m)
+                steg_method = m
+                break
+            except Exception as e:
+                last_err = e
+        if extracted is None:
+            return jsonify({'error': f'Extract failed: {last_err}'}), 500
+        encrypted = extracted
 
     try:
         plain = decrypt_chain(encrypted, stego_key, steps)
@@ -168,10 +182,10 @@ def extract():
         return jsonify({'error': f'Decryption failed: {e}'}), 400
 
     try:
-        return jsonify({'success': True, 'payload': plain.decode('utf-8'), 'is_binary': False})
+        return jsonify({'success': True, 'payload': plain.decode('utf-8'), 'is_binary': False, 'steg_method': steg_method})
     except UnicodeDecodeError:
         import base64
-        return jsonify({'success': True, 'payload': base64.b64encode(plain).decode(), 'is_binary': True})
+        return jsonify({'success': True, 'payload': base64.b64encode(plain).decode(), 'is_binary': True, 'steg_method': steg_method})
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5001, debug=False, threaded=True)

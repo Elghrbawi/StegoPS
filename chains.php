@@ -57,7 +57,7 @@ $chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 <div class="algo-cat-group" data-cat="<?= $category ?>">
 <div class="algo-cat-title"><?= ucfirst($category) ?></div>
 <?php foreach($algoList as $algo): ?>
-<div class="algo-chip <?= $category ?>" data-name="<?= strtolower(htmlspecialchars($algo['algo_name'])) ?>" onclick="addToChain('<?= addslashes($algo['algo_name']) ?>','<?= $category ?>','<?= $algo['algo_slug'] ?>')">
+<div class="algo-chip <?= $category ?><?= $algo['algo_slug']==='netrunner' ? ' netrunner-chip' : '' ?>" data-name="<?= strtolower(htmlspecialchars($algo['algo_name'])) ?>" onclick="addToChain('<?= addslashes($algo['algo_name']) ?>','<?= $category ?>','<?= $algo['algo_slug'] ?>')">
 <span><?= htmlspecialchars($algo['algo_name']) ?></span>
 <span style="opacity:.5;font-size:14px">+</span>
 </div>

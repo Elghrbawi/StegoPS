@@ -576,15 +576,15 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
    ══════════════════════════════════════════════ */
 .algo-chip.netrunner-chip,
 .algo-chip.custom.netrunner-chip {
-  background: rgba(220,0,30,0.14) !important;
-  border-color: #cc0020 !important;
-  color: #ff2244 !important;
+  background: rgba(220,38,38,.1) !important;
+  border-color: transparent !important;
+  color: #f87171 !important;
 }
 .algo-chip.netrunner-chip:hover {
-  background: rgba(220,0,30,0.25) !important;
-  border-color: #ff2244 !important;
-  box-shadow: 0 0 10px rgba(255,34,68,0.3);
+  background: rgba(220,38,38,.2) !important;
+  border-color: transparent !important;
+  box-shadow: 0 0 16px rgba(220,38,38,.5),0 0 5px rgba(220,38,38,.25);
 }
 .algo-chip.netrunner-chip .chip-plus {
-  color: #ff2244 !important;
+  color: #f87171 !important;
 }

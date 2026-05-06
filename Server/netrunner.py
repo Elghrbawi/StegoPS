@@ -1,27 +1,90 @@
-import hashlib
+"""NETRUNNER cipher module for chain_engine controller.
 
-# NETRUNNER — Red-Channel Keystream Cipher
-# Replace this implementation with your own NETRUNNER code.
-# The interface must expose: encrypt(data: bytes, key: str) -> bytes
-#                           decrypt(data: bytes, key: str) -> bytes
+Exposes controller-compatible API:
+    encrypt(data: bytes, key: str, **kw) -> bytes
+    decrypt(data: bytes, key: str, **kw) -> bytes
+"""
 
-def _red_keystream(key: str, length: int) -> bytes:
-    # Simulates extracting the "red channel" from a key-derived color sequence.
-    # Each SHA-256 block is treated as 32 pixels; only the red bytes (index 0,3,6...)
-    # are used to form the keystream — mirroring red-channel extraction in RGB images.
-    stream = bytearray()
-    counter = 0
-    key_bytes = key.encode('utf-8')
-    red_marker = b'\xff\x00\x00'  # red channel seed marker
-    while len(stream) < length:
-        block = hashlib.sha256(key_bytes + red_marker + counter.to_bytes(4, 'big')).digest()
-        stream.extend(block[i] for i in range(0, len(block), 3))
-        counter += 1
-    return bytes(stream[:length])
+
+class NetrunnerCipher:
+    def __init__(self) -> None:
+        self.CYBER_MASK = 0xF0
+
+    def layer1_encrypt(self, values: list[int]) -> list[int]:
+        length = len(values)
+        shift = length % 26
+        out: list[int] = []
+        for i, val in enumerate(values):
+            shifted = (val + shift) % 256
+            scrambled = (shifted + (i * shift)) % 256
+            out.append(scrambled)
+        return out
+
+    def layer2_encrypt(self, values: list[int]) -> list[int]:
+        out: list[int] = []
+        for i, val in enumerate(values):
+            reversed_bits = int(f"{val:08b}"[::-1], 2)
+            shifted = (reversed_bits + i) % 256
+            out.append(shifted)
+        return out
+
+    def layer3_encrypt(self, values: list[int]) -> bytes:
+        out: list[int] = []
+        for i, val in enumerate(values):
+            dynamic_mask = (self.CYBER_MASK + i) % 256
+            xored = val ^ dynamic_mask
+            substituted = (xored + i) % 256
+            out.append(substituted)
+        return bytes(out)
+
+    def layer3_decrypt(self, data: bytes) -> list[int]:
+        out: list[int] = []
+        for i, b in enumerate(data):
+            unsubstituted = (b - i) % 256
+            dynamic_mask = (self.CYBER_MASK + i) % 256
+            unxored = unsubstituted ^ dynamic_mask
+            out.append(unxored)
+        return out
+
+    def layer2_decrypt(self, values: list[int]) -> list[int]:
+        out: list[int] = []
+        for i, val in enumerate(values):
+            unshifted = (val - i) % 256
+            unreversed = int(f"{unshifted:08b}"[::-1], 2)
+            out.append(unreversed)
+        return out
+
+    def layer1_decrypt(self, values: list[int]) -> list[int]:
+        length = len(values)
+        shift = length % 26
+        out: list[int] = []
+        for i, val in enumerate(values):
+            unscrambled = (val - (i * shift)) % 256
+            unshifted = (unscrambled - shift) % 256
+            out.append(unshifted)
+        return out
+
+    def encrypt_bytes(self, data: bytes) -> bytes:
+        stage1 = self.layer1_encrypt(list(data))
+        stage2 = self.layer2_encrypt(stage1)
+        return self.layer3_encrypt(stage2)
+
+    def decrypt_bytes(self, data: bytes) -> bytes:
+        stage3 = self.layer3_decrypt(data)
+        stage2 = self.layer2_decrypt(stage3)
+        stage1 = self.layer1_decrypt(stage2)
+        return bytes(stage1)
+
+
+_NETRUNNER = NetrunnerCipher()
+
 
 def encrypt(data: bytes, key: str, **kw) -> bytes:
-    ks = _red_keystream(key, len(data))
-    return bytes(a ^ b for a, b in zip(data, ks))
+    # Controller passes key for all algorithms; NETRUNNER core is keyless by design.
+    _ = key
+    return _NETRUNNER.encrypt_bytes(data)
+
 
 def decrypt(data: bytes, key: str, **kw) -> bytes:
-    return encrypt(data, key)
+    _ = key
+    return _NETRUNNER.decrypt_bytes(data)

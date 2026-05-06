@@ -257,20 +257,43 @@ async function pingEngine() {
     if (d.status === 'ok' || d.version) {
       _engineOnline = true;
       if (dot) dot.className = 'engine-dot online';
-      if (txt) txt.innerHTML = '&#10003; Python engine online &mdash; v' + (d.version||'?') + ' &mdash; algos: ' + (d.algorithms||[]).join(', ');
+      if (txt) txt.textContent = 'Engine online';
     } else {
       throw new Error(d.message || 'Ping failed');
     }
   } catch(e) {
     _engineOnline = false;
     if (dot) dot.className = 'engine-dot offline';
-    if (txt) txt.textContent = '\u2717 Engine offline: ' + e.message;
+    if (txt) txt.textContent = 'Engine offline';
   }
 }
 
 /* ── Steg Method Loader ── */
 let _currentFileType = 'image';
 let _selectedMethod  = 'lsb';
+let _allMethods      = [];
+
+function _payloadFileIsImage() {
+  const f = document.getElementById('payload-file-input')?.files?.[0];
+  return !!(f && (f.type || '').toLowerCase().startsWith('image/'));
+}
+
+function _isImageInsideImageMode() {
+  const payloadType = document.getElementById('payload-type-input')?.value || 'text';
+  return _currentFileType === 'image' && payloadType === 'file' && _payloadFileIsImage();
+}
+
+function _filterMethodsBySelection(methods) {
+  const imgInImgMode = _isImageInsideImageMode();
+  const payloadType = document.getElementById('payload-type-input')?.value || 'text';
+  const imageFilePayload = _currentFileType === 'image' && payloadType === 'file';
+  return (methods || []).filter(m => {
+    if (!m || !m.slug) return false;
+    if (m.slug === 'xor_pixel') return imgInImgMode;
+    if (m.slug === 'img_in_img') return imageFilePayload;
+    return true;
+  });
+}
 
 async function loadStegMethods(fileType) {
   const container = document.getElementById('steg-method-cards');
@@ -288,17 +311,27 @@ async function loadStegMethods(fileType) {
     }
     const d = await r.json();
     if (!d.success || !Array.isArray(d.methods) || d.methods.length === 0) {
+      const msg = (d.message || '').toLowerCase();
+      if (msg.includes('offline') || msg.includes('connect')) throw new Error('Engine offline');
       throw new Error(d.message || 'No methods returned');
     }
     renderStegMethods(d.methods);
   } catch(e) {
-    container.innerHTML = '<div class="steg-method-loading" style="color:var(--danger)">\u2717 ' + e.message + '</div>';
+    const em = (e.message || '').toLowerCase();
+    const shortMsg = (em.includes('offline') || em.includes('connect')) ? 'Engine offline' : e.message;
+    container.innerHTML = '<div class="steg-method-loading" style="color:var(--danger)">\u2717 ' + shortMsg + '</div>';
   }
 }
 
 function renderStegMethods(methods) {
   const container = document.getElementById('steg-method-cards');
   if (!container) return;
+  _allMethods = Array.isArray(methods) ? methods.slice() : [];
+  methods = _filterMethodsBySelection(_allMethods);
+  if (!methods.length) {
+    container.innerHTML = '<div class="steg-method-loading" style="color:var(--warning)">No methods available for this payload/carrier selection.</div>';
+    return;
+  }
   container.innerHTML = '';
   methods.forEach((m, i) => {
     const card = document.createElement('label');
@@ -326,6 +359,10 @@ function renderStegMethods(methods) {
   });
 }
 
+function refreshStegMethodsBySelection() {
+  renderStegMethods(_allMethods);
+}
+
 /* ── Override switchMedia to also load methods ── */
 const _origSwitchMedia = typeof switchMedia === 'function' ? switchMedia : null;
 function switchMedia(type) {
@@ -342,6 +379,12 @@ function switchMedia(type) {
   const inp  = document.getElementById('media-type-input'); if (inp)  inp.value = type;
   _currentFileType = type;
   loadStegMethods(type);
+}
+
+const _origSwitchPayloadType = typeof switchPayloadType === 'function' ? switchPayloadType : null;
+function switchPayloadType(type) {
+  if (_origSwitchPayloadType) _origSwitchPayloadType(type);
+  refreshStegMethodsBySelection();
 }
 
 /* ── Terminal helpers ── */
@@ -403,13 +446,16 @@ function restoreEmbed() {
 /* ── EMBED ── */
 function runEmbed() {
   const payload    = document.getElementById('embed-payload')?.value || '';
+  const payloadFile= document.getElementById('payload-file-input')?.files?.[0];
+  const payloadType= document.getElementById('payload-type-input')?.value || 'text';
   const stegoKey   = document.getElementById('embed-stego-key')?.value || '';
   const carrierFile= document.getElementById('carrier-input')?.files[0];
   const stegMethod = document.getElementById('steg-method-input')?.value || _selectedMethod || 'lsb';
   const btn        = document.getElementById('embed-btn');
 
   if (!carrierFile)  { showStegError('Upload a carrier file first'); return; }
-  if (!payload && document.getElementById('payload-type-input').value==='text') { showStegError('Enter a payload message'); return; }
+  if (!payload && payloadType==='text') { showStegError('Enter a payload message'); return; }
+  if (payloadType==='file' && !payloadFile) { showStegError('Select a payload file first'); return; }
   if (!stegoKey)     { showStegError('Enter your stego key'); return; }
 
   setLoading(btn, true);
@@ -419,7 +465,7 @@ function runEmbed() {
   const termBody     = document.getElementById('embed-term-body');
   const hasCrypto    = chain.some(s=>['symmetric','asymmetric','classical'].includes(s.category));
   const cryptoLayers = chain.filter(s=>['symmetric','asymmetric','classical'].includes(s.category)).length;
-  const payloadBytes = new TextEncoder().encode(payload).length;
+  const payloadBytes = payloadType==='file' ? (payloadFile?.size || 0) : new TextEncoder().encode(payload).length;
   const carrierSizeKB= (carrierFile.size / 1024).toFixed(1);
 
   const preSteps = [
@@ -476,12 +522,16 @@ function runEmbed() {
             // Actually send the request
             const fd = new FormData();
             fd.append('action',       'embed');
-            fd.append('payload_text', payload);
+            if (payloadType === 'file') {
+              fd.append('payload_file', payloadFile);
+            } else {
+              fd.append('payload_text', payload);
+            }
             fd.append('stego_key',    stegoKey);
             fd.append('steg_method',  stegMethod);
             fd.append('chain_data',   JSON.stringify(chain));
             fd.append('media_type',   document.getElementById('media-type-input').value);
-            fd.append('payload_type', document.getElementById('payload-type-input').value);
+            fd.append('payload_type', payloadType);
             fd.append('carrier',      carrierFile);
 
             fetch(EMBED_URL, {method:'POST', body:fd})
@@ -540,6 +590,8 @@ window.addEventListener('DOMContentLoaded', () => {
   renderChain();
   pingEngine();
   loadStegMethods('image');
+  const pfi = document.getElementById('payload-file-input');
+  if (pfi) pfi.addEventListener('change', refreshStegMethodsBySelection);
 });
 </script>
 

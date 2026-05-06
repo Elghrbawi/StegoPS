@@ -18,6 +18,19 @@ $res['success']?($success='Share link created!')&&($shareUrl=$res['url']):($erro
 $ops=$db->fetchAll("SELECT o.op_id, f.original_filename, o.created_at FROM stego_operations o JOIN media_files f ON o.carrier_file_id=f.file_id WHERE o.user_id=? AND o.status='completed' ORDER BY o.created_at DESC LIMIT 50",[$user['user_id']]);
 $shares=$db->fetchAll("SELECT sf.*, f.original_filename FROM shared_files sf JOIN stego_operations o ON sf.op_id=o.op_id JOIN media_files f ON o.carrier_file_id=f.file_id WHERE o.user_id=? AND sf.is_active=1 ORDER BY sf.created_at DESC",[$user['user_id']]);
 $preOp=(int)($_GET['op']??0);
+$opDetails = null;
+if ($preOp > 0) {
+  $opDetails = $db->fetchOne(
+    "SELECT o.*,cf.original_filename as before_name,cf.file_size_bytes as before_size,cf.file_type as media_type,
+            of.original_filename as after_name,of.file_size_bytes as after_size
+     FROM stego_operations o
+     JOIN media_files cf ON cf.file_id=o.carrier_file_id
+     LEFT JOIN media_files of ON of.file_id=o.output_file_id
+     WHERE o.op_id=? AND o.user_id=?",
+    [$preOp, $user['user_id']]
+  );
+}
+function fmtShareSize(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return round($b/1024,1).' KB';return round($b/1048576,2).' MB';}
 ?>
 <div class="page-header">
 <div>
@@ -27,6 +40,26 @@ $preOp=(int)($_GET['op']??0);
 </div>
 <?php if($error): ?><div class="alert alert-error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 <?php if($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
+<?php if($opDetails): ?>
+<div class="card" style="margin-bottom:16px">
+<div class="card-title">Operation Analysis #<?= (int)$opDetails['op_id'] ?></div>
+<div class="grid-2">
+<div>
+<div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);margin-bottom:6px">BEFORE / AFTER</div>
+<div style="font-size:12px;color:var(--text)"><?= htmlspecialchars($opDetails['before_name']) ?></div>
+<div style="font-size:11px;color:var(--text-muted);margin-top:2px"><?= fmtShareSize((int)$opDetails['before_size']) ?> → <?= fmtShareSize((int)($opDetails['after_size']??0)) ?></div>
+<div style="font-size:12px;color:var(--text);margin-top:10px"><?= htmlspecialchars($opDetails['after_name'] ?? 'pending output') ?></div>
+</div>
+<div>
+<div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);margin-bottom:6px">ANALYSIS</div>
+<div style="font-size:11px;color:var(--text-dim)">Type: <?= strtoupper((string)$opDetails['media_type']) ?></div>
+<div style="font-size:11px;color:var(--text-dim)">Steg: <?= strtoupper((string)$opDetails['stego_technique']) ?></div>
+<div style="font-size:11px;color:var(--text-dim)">Payload: <?= fmtShareSize((int)$opDetails['payload_size']) ?></div>
+<div style="font-size:11px;color:var(--text-dim)">Status: <?= strtoupper((string)$opDetails['status']) ?></div>
+</div>
+</div>
+</div>
+<?php endif; ?>
 <div class="grid-2">
 <div style="display:flex;flex-direction:column;gap:16px">
 <form method="POST">

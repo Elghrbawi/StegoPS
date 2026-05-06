@@ -51,6 +51,23 @@ try {
         $stegMeth  = $_POST['steg_method']     ?? 'lsb';
         $chainRaw  = json_decode($_POST['chain_data'] ?? '[]', true) ?: [];
 
+        if ($pType === 'file') {
+            if (empty($_FILES['payload_file']['name']) || $_FILES['payload_file']['error'] !== UPLOAD_ERR_OK) {
+                echo json_encode(['success'=>false,'message'=>'No payload file or upload error.']);
+                exit;
+            }
+            $bin = file_get_contents($_FILES['payload_file']['tmp_name']);
+            if ($bin === false) {
+                echo json_encode(['success'=>false,'message'=>'Failed to read payload file.']);
+                exit;
+            }
+            $meta = json_encode([
+                'name' => $_FILES['payload_file']['name'] ?? 'payload.bin',
+                'type' => $_FILES['payload_file']['type'] ?? 'application/octet-stream',
+            ], JSON_UNESCAPED_SLASHES);
+            $payload = base64_encode("STEGFILE1\n" . $meta . "\n\n" . $bin);
+        }
+
         if (empty($stegoKey)) { echo json_encode(['success'=>false,'message'=>'Stego key is required.']); exit; }
         if (empty($payload) && $pType === 'text') { echo json_encode(['success'=>false,'message'=>'Payload cannot be empty.']); exit; }
 

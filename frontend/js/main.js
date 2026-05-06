@@ -36,7 +36,7 @@ const cd=document.getElementById('chain-data');if(cd)cd.value=JSON.stringify(cha
 container.innerHTML='';
 if(chain.length===0){container.innerHTML='<div class="chain-empty"><span style="font-size:28px;filter:grayscale(1)">&#9939;</span><span>No operations yet</span><span style="font-size:10px;color:var(--text-muted)">Click an algorithm to start &#8594;</span></div>';updateChainShareKey();_refreshHieros();return;}
 chain.forEach((step,i)=>{
-const c=(step.slug==="netrunner")?{bg:"rgba(220,0,30,0.18)",color:"#ff2244",border:"#cc0020",num:"#cc0020"}:(chainColors[step.category]||chainColors.custom);
+const c=(step.slug==="netrunner")?chainColors.hashing:(chainColors[step.category]||chainColors.custom);
 if(i>0){const a=document.createElement('div');a.className='step-arrow';a.textContent='\u2193';container.appendChild(a);}
 const el=document.createElement('div');el.className='chain-step';el.style.cssText=`background:${c.bg};border-color:${c.border}`;
 const keyNeeds=algoNeedsKey(step.slug);
@@ -193,11 +193,12 @@ draw();
 /* ── PHARAOH HIEROGLYPH BUTTON ANIMATION ── */
 const _stegoChars='\u2591\u2592\u2593\u2502\u2524\u251C\u252C\u2534\u25C6\u25C8\u2B21\u2295\u2297\u2584\u2580\u25A0\u25A1\u25AA\u25AB\u29C1'.split('');
 const _cryptoChars='\u26D3\u2295\u2297#@$%&\u2020\u2021\u00A7\u2316\u2317\u2318\u229E\u229F\u22A0'.split('');
-const _catSolidColors={classical:'#a78bfa',symmetric:'#60a5fa',asymmetric:'#34d399',custom:'#fbbf24',hashing:'#f87171',netrunner:'#ff2244'};
+const _catSolidColors={classical:'#a78bfa',symmetric:'#60a5fa',asymmetric:'#34d399',custom:'#fbbf24',hashing:'#f87171',netrunner:'#f87171'};
 function _hasCrypto(){return typeof chain!=='undefined'&&chain.some(s=>['symmetric','asymmetric','classical'].includes(s.category));}
 function _getCryptoCt(){return typeof chain!=='undefined'?chain.filter(s=>['symmetric','asymmetric','classical'].includes(s.category)).length:0;}
 function _getBtnChars(){return _hasCrypto()?_stegoChars.concat(_cryptoChars):_stegoChars;}
-function _getChainSolidColor(fallback){if(typeof chain!=="undefined"&&chain.some(s=>s.slug==="netrunner")&&Math.random()<.4)return"#ff2244";
+function _getChainSolidColor(fallback){
+if(typeof chain!=='undefined'&&chain.some(s=>(s.slug||'').toLowerCase()==='netrunner'))return '#f87171';
 if(typeof chain!=='undefined'&&chain.length>0){
 const cats=[...new Set(chain.map(s=>s.category))];
 if(cats.length>0){const c=_catSolidColors[cats[Math.floor(Math.random()*cats.length)]];if(c)return c;}
@@ -213,7 +214,7 @@ const ctx=canvas.getContext('2d');
 let cols=[],W=0,H=0,running=false,raf=null,processing=false;
 const isEmbed=mode==='embed';
 const defaultFallback=isEmbed?'#00e5c8':'#c084fc';
-const cryptoFallback='#ffd060';
+const cryptoFallback='#f87171';
 function _pickColor(isCrypto){return _getChainSolidColor(isCrypto?cryptoFallback:defaultFallback);}
 function resize(){
 const r=canvas.getBoundingClientRect();

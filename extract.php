@@ -74,7 +74,7 @@ $chainKeysMap[$c['chain_id']]=base64_encode(json_encode($stepsArr));
 <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-bottom:10px">Or build the chain manually &mdash; must match embedding order.</div>
 <div class="algo-chips-wrap">
 <?php foreach($algos as $cat=>$list): foreach(array_slice($list,0,2) as $a): ?>
-<div class="algo-chip <?= $cat ?>" onclick="addToChain('<?= addslashes($a['algo_name']) ?>','<?= $cat ?>','<?= $a['algo_slug'] ?>')">
+<div class="algo-chip <?= $cat ?><?= $a['algo_slug']==='netrunner' ? ' netrunner-chip' : '' ?>" onclick="addToChain('<?= addslashes($a['algo_name']) ?>','<?= $cat ?>','<?= $a['algo_slug'] ?>')">
 <?= htmlspecialchars($a['algo_name']) ?> <span class="chip-plus">+</span>
 </div>
 <?php endforeach; endforeach; ?>
@@ -138,6 +138,35 @@ function persistExtract(){try{localStorage.setItem('extract_stego_key',document.
 function restoreExtract(){try{const k=localStorage.getItem('extract_stego_key');if(k&&document.getElementById('extract-stego-key'))document.getElementById('extract-stego-key').value=k;}catch(e){}}
 let extractedPayload='';
 function copyPayload(){navigator.clipboard.writeText(extractedPayload).then(()=>showToast('Payload copied!'));}
+function _renderBinaryPayload(base64Payload){
+try{
+const binStr=atob(base64Payload||'');
+if(!binStr){return '<div style="color:var(--text-muted)">Binary payload detected but empty.</div>';}
+if(binStr.startsWith('STEGFILE1\n')){
+const sep=binStr.indexOf('\n\n');
+if(sep>0){
+const metaRaw=binStr.substring(10,sep);
+let meta={name:'payload.bin',type:'application/octet-stream'};
+try{meta=JSON.parse(metaRaw);}catch(e){}
+const raw=binStr.substring(sep+2);
+const bytes=new Uint8Array(raw.length);
+for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+const blob=new Blob([bytes],{type:meta.type||'application/octet-stream'});
+const url=URL.createObjectURL(blob);
+const isImg=(meta.type||'').startsWith('image/');
+let html='<div style="font-family:Space Mono,monospace;font-size:10px;color:var(--text-dim);margin-bottom:8px">FILE: '+(meta.name||'payload.bin')+' · '+(meta.type||'application/octet-stream')+' · '+bytes.length+' B</div>';
+if(isImg){
+html+='<div style="margin-bottom:8px"><img src="'+url+'" alt="Decrypted image" style="max-width:100%;max-height:220px;border:1px solid var(--border);border-radius:8px"></div>';
+}
+html+='<a href="'+url+'" download="'+(meta.name||'payload.bin')+'" style="color:var(--accent)">⬇ Download decrypted file</a>';
+return html;
+}
+}
+return '<div style="font-family:Space Mono,monospace;font-size:10px;color:var(--text-dim)">Binary payload ('+binStr.length+' B)</div>';
+}catch(e){
+return '<div style="color:var(--danger)">Failed to decode binary payload.</div>';
+}
+}
 function runExtract(){
 const stegoKey=document.getElementById('extract-stego-key')?.value||'';
 const stegoFile=document.getElementById('stego-input')?.files[0];
@@ -165,7 +194,11 @@ if(d.success){
 if(btn._flashOk)btn._flashOk();
 addTermLine(termBody,'','<span style="color:var(--accent)">\u2713 EXTRACTION SUCCESSFUL</span>');
 extractedPayload=d.payload||'';
+if(d.is_binary){
+document.getElementById('payload-content').innerHTML=_renderBinaryPayload(extractedPayload);
+}else{
 document.getElementById('payload-content').textContent=extractedPayload;
+}
 revealEl.style.display='block';
 }else{
 if(btn._flashErr)btn._flashErr();else setLoading(btn,false);

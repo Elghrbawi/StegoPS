@@ -4,6 +4,30 @@ require_once __DIR__ . '/../config/database.php';
 class StegoHandler {
     private Database $db;
     public function __construct() { $this->db = Database::getInstance(); }
+    private ?int $guestStorageUserId = null;
+
+    private function resolveStorageUserId(int $userId): int {
+        if ($userId > 0) return $userId;
+        if ($this->guestStorageUserId !== null) return $this->guestStorageUserId;
+
+        $guest = $this->db->fetchOne("SELECT user_id FROM users WHERE username='guest_storage' LIMIT 1");
+        if ($guest && !empty($guest['user_id'])) {
+            $this->guestStorageUserId = (int)$guest['user_id'];
+            return $this->guestStorageUserId;
+        }
+
+        $salt     = bin2hex(random_bytes(8));
+        $rawPass  = 'guest_storage_' . bin2hex(random_bytes(12));
+        $passHash = password_hash($rawPass . $salt, PASSWORD_BCRYPT, ['cost'=>12]);
+        $stegKey  = substr(bin2hex(random_bytes(32)), 0, 32);
+
+        $id = $this->db->insert(
+            "INSERT INTO users (username,email,password_hash,salt,steg_key,role,is_verified,is_active) VALUES (?,?,?,?,?,'user',1,1)",
+            ['guest_storage', null, $passHash, $salt, $stegKey]
+        );
+        $this->guestStorageUserId = (int)$id;
+        return $this->guestStorageUserId;
+    }
 
     private function ensureDirs(): void {
         foreach (['carriers','stego','payloads'] as $d) {
@@ -22,6 +46,7 @@ class StegoHandler {
     }
 
     public function uploadCarrier(array $file, int $userId): array {
+        $storageUserId = $this->resolveStorageUserId($userId);
         if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name']))
             return ['success'=>false,'message'=>'No file received or invalid upload.'];
 
@@ -44,7 +69,7 @@ class StegoHandler {
 
         $this->ensureDirs();
         $ext     = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $stored  = $this->makeFilename('carrier', $userId, $ext);
+        $stored  = $this->makeFilename('carrier', $storageUserId, $ext);
         $destDir = UPLOAD_PATH . 'carriers' . DIRECTORY_SEPARATOR;
         $dest    = $destDir . $stored;
         if (!move_uploaded_file($file['tmp_name'], $dest))
@@ -53,9 +78,9 @@ class StegoHandler {
         $hash   = hash_file('sha256', $dest);
         $fileId = $this->db->insert(
             "INSERT INTO media_files (user_id,original_filename,stored_filename,file_type,mime_type,file_size_bytes,file_hash,storage_path) VALUES (?,?,?,?,?,?,?,?)",
-            [$userId, $file['name'], $stored, $type, $mime, $file['size'], $hash, 'carriers/'.$stored]
+            [$storageUserId, $file['name'], $stored, $type, $mime, $file['size'], $hash, 'carriers/'.$stored]
         );
-        if ($userId > 0) $this->db->query("UPDATE users SET storage_used=storage_used+? WHERE user_id=?", [$file['size'], $userId]);
+        if ($userId > 0) $this->db->query("UPDATE users SET storage_used=storage_used+? WHERE user_id=?", [$file['size'], $storageUserId]);
         return ['success'=>true,'file_id'=>$fileId,'file_type'=>$type,'stored'=>$stored,'abs_path'=>$dest,'file_size'=>$file['size']];
     }
 
@@ -142,7 +167,26 @@ class StegoHandler {
             return ['success'=>false,'methods'=>[],'message'=>'Engine offline: '.$curlErr];
         }
         if ($httpCode !== 200) {
-            return ['success'=>false,'methods'=>[],'message'=>'Engine error HTTP '.$httpCode];
+            if ($httpCode !== 405) {
+                return ['success'=>false,'methods'=>[],'message'=>'Engine error HTTP '.$httpCode];
+            }
+            $curl = curl_init($url);
+            curl_setopt_array($curl, [
+                CURLOPT_HTTPGET        => true,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => 10,
+                CURLOPT_CONNECTTIMEOUT => 8,
+                CURLOPT_HTTPHEADER     => [
+                    'Authorization: Bearer ' . PYTHON_API_SECRET,
+                    'Content-Type: application/json',
+                ],
+            ]);
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $curlErr  = curl_error($curl);
+            curl_close($curl);
+            if ($curlErr || $httpCode === 0) return ['success'=>false,'methods'=>[],'message'=>'Engine offline: '.$curlErr];
+            if ($httpCode !== 200) return ['success'=>false,'methods'=>[],'message'=>'Engine error HTTP '.$httpCode];
         }
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
@@ -154,23 +198,25 @@ class StegoHandler {
     public function embed(int $userId, int $fileId, ?int $chainId,
                           string $payloadType, string $payload,
                           string $stegoKey, string $stegMethod, array $chainSteps): array {
-        $carrier = $this->db->fetchOne("SELECT * FROM media_files WHERE file_id=? AND user_id=?", [$fileId, $userId]);
+        $storageUserId = $this->resolveStorageUserId($userId);
+        $carrier = $this->db->fetchOne("SELECT * FROM media_files WHERE file_id=? AND user_id=?", [$fileId, $storageUserId]);
         if (!$carrier) return ['success'=>false,'message'=>'Carrier file not found.'];
 
         $opId = $this->db->insert(
             "INSERT INTO stego_operations (user_id,chain_id,carrier_file_id,operation_type,payload_type,payload_size,stego_technique,status) VALUES (?,?,?,?,?,?,?,'processing')",
-            [$userId, $chainId, $fileId, 'embed', $payloadType, strlen($payload), $stegMethod]
+            [$storageUserId, $chainId, $fileId, 'embed', $payloadType, strlen($payload), $stegMethod]
         );
 
         $carrierPath = UPLOAD_PATH . str_replace('/', DIRECTORY_SEPARATOR, $carrier['storage_path']);
         $outputDir   = UPLOAD_PATH . 'stego' . DIRECTORY_SEPARATOR;
         if (!is_dir($outputDir)) mkdir($outputDir, 0755, true);
 
+        $pythonPayloadType = $payloadType === 'file' ? 'file_b64' : $payloadType;
         $result = $this->callPython('/api/embed', [
             'carrier_path' => $carrierPath,
             'output_dir'   => $outputDir,
             'payload'      => $payload,
-            'payload_type' => $payloadType,
+            'payload_type' => $pythonPayloadType,
             'stego_key'    => $stegoKey,
             'steg_method'  => $stegMethod,
             'file_type'    => $carrier['file_type'],
@@ -192,10 +238,10 @@ class StegoHandler {
 
         $outFileId = $this->db->insert(
             "INSERT INTO media_files (user_id,original_filename,stored_filename,file_type,mime_type,file_size_bytes,file_hash,storage_path,is_processed) VALUES (?,?,?,?,?,?,?,?,1)",
-            [$userId, 'stego_output.'.$ext, $outFilename, $carrier['file_type'], $mimeMap[$ext] ?? 'application/octet-stream', $outSize, $outHash, 'stego/'.$outFilename]
+            [$storageUserId, 'stego_output.'.$ext, $outFilename, $carrier['file_type'], $mimeMap[$ext] ?? 'application/octet-stream', $outSize, $outHash, 'stego/'.$outFilename]
         );
         $this->db->query("UPDATE stego_operations SET status='completed',output_file_id=?,completed_at=NOW() WHERE op_id=?", [$outFileId, $opId]);
-        if ($userId > 0) $this->db->query("UPDATE users SET storage_used=storage_used+? WHERE user_id=?", [$outSize, $userId]);
+        if ($userId > 0) $this->db->query("UPDATE users SET storage_used=storage_used+? WHERE user_id=?", [$outSize, $storageUserId]);
 
         return [
             'success'       => true,
@@ -211,7 +257,8 @@ class StegoHandler {
     }
 
     public function extract(int $userId, int $fileId, string $stegoKey, string $stegMethod, array $chainSteps): array {
-        $file = $this->db->fetchOne("SELECT * FROM media_files WHERE file_id=? AND user_id=?", [$fileId, $userId]);
+        $storageUserId = $this->resolveStorageUserId($userId);
+        $file = $this->db->fetchOne("SELECT * FROM media_files WHERE file_id=? AND user_id=?", [$fileId, $storageUserId]);
         if (!$file) return ['success'=>false,'message'=>'File not found.'];
 
         $filePath = UPLOAD_PATH . str_replace('/', DIRECTORY_SEPARATOR, $file['storage_path']);

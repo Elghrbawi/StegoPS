@@ -8,11 +8,16 @@ $files=[];
 $totalSize=0;
 if (!$isGuest) {
 $files=$db->fetchAll(
-"SELECT f.file_id,f.original_filename,f.stored_filename,f.file_type,f.mime_type,f.file_size_bytes,f.is_processed,f.uploaded_at,o.op_id,o.operation_type,o.status as op_status
-FROM media_files f
-LEFT JOIN stego_operations o ON (o.carrier_file_id=f.file_id OR o.output_file_id=f.file_id)
-WHERE f.user_id=?
-ORDER BY f.uploaded_at DESC",
+"SELECT f.file_id,f.original_filename,f.stored_filename,f.file_type,f.mime_type,f.file_size_bytes,f.is_processed,f.uploaded_at,
+        o.op_id,o.operation_type,o.status as op_status,o.payload_size,o.stego_technique,o.created_at as op_created_at,
+        cf.file_size_bytes as before_size,of.file_size_bytes as after_size,
+        cf.file_id as carrier_id,of.file_id as output_id
+ FROM media_files f
+ LEFT JOIN stego_operations o ON (o.carrier_file_id=f.file_id OR o.output_file_id=f.file_id)
+ LEFT JOIN media_files cf ON cf.file_id=o.carrier_file_id
+ LEFT JOIN media_files of ON of.file_id=o.output_file_id
+ WHERE f.user_id=?
+ ORDER BY f.uploaded_at DESC",
 [$user['user_id']]
 );
 $totalSize=$user['storage_used']??0;
@@ -93,15 +98,22 @@ $fc=$isStego?'stego':($f['file_type']??'');
 <td style="font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);white-space:nowrap"><?= fmtAmPm2($f['uploaded_at']??date('Y-m-d H:i:s')) ?></td>
 <td>
 <?php if(!empty($f['op_id'])): ?>
+<a href="<?= SITE_URL ?>/share.php?op=<?= (int)$f['op_id'] ?>" style="text-decoration:none">
 <span class="badge badge-<?= ($f['op_status']??'')==='completed'?'success':(($f['op_status']??'')==='failed'?'failed':'pending') ?>"><?= strtoupper($f['operation_type']??'') ?> #<?= $f['op_id'] ?></span>
+</a>
+<?php if(!empty($f['before_size']) && !empty($f['after_size'])): ?>
+<div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:3px;white-space:nowrap">
+<?= fmtSize((int)$f['before_size']) ?> → <?= fmtSize((int)$f['after_size']) ?>
+</div>
+<?php endif; ?>
 <?php else: ?><span style="color:var(--text-muted);font-size:11px">—</span><?php endif; ?>
 </td>
 <td>
 <div style="display:flex;gap:5px;flex-wrap:wrap">
 <a href="<?= SITE_URL ?>/php/api/download.php?id=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Download">&#11015;</a>
 <?php if($isStego): ?>
-<a href="<?= SITE_URL ?>/extract.php?file=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Extract">&#128275;</a>
-<a href="<?= SITE_URL ?>/share.php?file=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Share">&#11041;</a>
+<a href="<?= SITE_URL ?>/extract.php?file=<?= $f['file_id'] ?>&op=<?= (int)($f['op_id']??0) ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Extract">&#128275;</a>
+<a href="<?= SITE_URL ?>/share.php?op=<?= (int)($f['op_id']??0) ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Share">&#11041;</a>
 <?php else: ?>
 <a href="<?= SITE_URL ?>/embed.php?carrier=<?= $f['file_id'] ?>" class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:10px" title="Embed">&#9939;</a>
 <?php endif; ?>
