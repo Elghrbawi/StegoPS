@@ -1,102 +1,178 @@
 <?php
-// Always output JSON — catch everything before any output
 ob_start();
-
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/stego_handler.php';
-
-// Discard any accidental whitespace/BOM from includes
 ob_clean();
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
+/* ── Helpers ─────────────────────────────────────────── */
+function readUpload(string $key, string &$err): ?string {
+    if (empty($_FILES[$key]['name']) || $_FILES[$key]['error'] !== UPLOAD_ERR_OK) {
+        $err = 'No file uploaded or upload error.'; return null;
+    }
+    $d = file_get_contents($_FILES[$key]['tmp_name']);
+    if ($d === false) { $err = 'Failed to read uploaded file.'; return null; }
+    return $d;
+}
+
+function filePayload(string $key, string &$err): ?string {
+    $bin = readUpload($key, $err); if ($bin === null) return null;
+    $meta = json_encode(['name'=>$_FILES[$key]['name']??'payload.bin','type'=>$_FILES[$key]['type']??'application/octet-stream'], JSON_UNESCAPED_SLASHES);
+    return base64_encode("STEGFILE1\n{$meta}\n\n{$bin}");
+}
+
+function imagePayload(string $key, string &$err): ?string {
+    $allowed = ['image/png','image/jpeg','image/bmp','image/gif','image/webp'];
+    $mime = @mime_content_type($_FILES[$key]['tmp_name'] ?? '') ?: ($_FILES[$key]['type'] ?? '');
+    if (!in_array($mime, $allowed, true)) { $err = 'Payload image must be PNG/JPEG/BMP/GIF/WebP.'; return null; }
+    $bin = readUpload($key, $err); if ($bin === null) return null;
+    $meta = json_encode(['name'=>$_FILES[$key]['name']??'payload.png','type'=>$mime], JSON_UNESCAPED_SLASHES);
+    return base64_encode("STEGIMAGE1\n{$meta}\n\n{$bin}");
+}
+
+function resolveCarrier(StegoHandler $h, int $uid, string &$err): ?array {
+    $preId = (int)($_POST['carrier_file_id'] ?? 0);
+    if ($preId > 0) {
+        $f = $h->getFileById($preId, $uid);
+        if (!$f) { $err = 'Pre-selected carrier not found.'; return null; }
+        return ['success'=>true,'file_id'=>$preId,'file_type'=>$f['file_type'],'file_size'=>$f['file_size_bytes']];
+    }
+    if (empty($_FILES['carrier']['name']) || $_FILES['carrier']['error'] !== UPLOAD_ERR_OK) {
+        $err = 'No carrier file or upload error.'; return null;
+    }
+    $r = $h->uploadCarrier($_FILES['carrier'], $uid);
+    if (!$r['success']) { $err = $r['message']; return null; }
+    return $r;
+}
+
+function resolveStego(StegoHandler $h, int $uid, string &$err): ?array {
+    $preId = (int)($_POST['stego_file_id'] ?? 0);
+    if ($preId > 0) {
+        $f = $h->getFileById($preId, $uid);
+        if (!$f) { $err = 'Pre-selected stego file not found.'; return null; }
+        return ['success'=>true,'file_id'=>$preId,'file_type'=>$f['file_type']];
+    }
+    if (empty($_FILES['stego_file']['name']) || $_FILES['stego_file']['error'] !== UPLOAD_ERR_OK) {
+        $err = 'No stego file or upload error.'; return null;
+    }
+    $r = $h->uploadCarrier($_FILES['stego_file'], $uid);
+    if (!$r['success']) { $err = $r['message']; return null; }
+    return $r;
+}
+
+/* ── Main ─────────────────────────────────────────────── */
 try {
     $auth = new Auth();
-    if (!$auth->isLoggedIn()) {
-        echo json_encode(['success'=>false,'message'=>'Not authenticated']);
-        exit;
-    }
-    $user = $auth->currentUser();
-    $uid  = (int)($user['user_id'] ?? 0);
-
+    if (!$auth->isLoggedIn()) { echo json_encode(['success'=>false,'message'=>'Not authenticated']); exit; }
+    $user    = $auth->currentUser();
+    $uid     = (int)($user['user_id'] ?? 0);
     $action  = $_POST['action'] ?? '';
     $handler = new StegoHandler();
 
-    /* ── PING: check if Python engine is reachable ── */
-    if ($action === 'ping') {
-        $r = $handler->pingEngine();
-        echo json_encode($r);
-        exit;
-    }
+    if ($action === 'ping') { echo json_encode($handler->pingEngine()); exit; }
 
-    /* ── GET METHODS: fetch available steg methods for a file type ── */
+    /* get_methods — carrier type + payload type aware */
     if ($action === 'get_methods') {
-        $fileType = $_POST['file_type'] ?? 'image';
-        $r        = $handler->getMethodsRaw($fileType);
-        echo json_encode($r);
+        echo json_encode($handler->getMethodsRaw(
+            $_POST['file_type']    ?? 'image',
+            $_POST['payload_type'] ?? 'text'
+        ));
         exit;
     }
 
-    /* ── EMBED ── */
+    /* embed */
     if ($action === 'embed') {
-        if (empty($_FILES['carrier']['name']) || $_FILES['carrier']['error'] !== UPLOAD_ERR_OK) {
-            echo json_encode(['success'=>false,'message'=>'No carrier file or upload error.']);
-            exit;
-        }
-
-        $stegoKey  = trim($_POST['stego_key']  ?? '');
-        $payload   = $_POST['payload_text']    ?? '';
-        $pType     = $_POST['payload_type']    ?? 'text';
-        $stegMeth  = $_POST['steg_method']     ?? 'lsb';
-        $chainRaw  = json_decode($_POST['chain_data'] ?? '[]', true) ?: [];
-
-        if ($pType === 'file') {
-            if (empty($_FILES['payload_file']['name']) || $_FILES['payload_file']['error'] !== UPLOAD_ERR_OK) {
-                echo json_encode(['success'=>false,'message'=>'No payload file or upload error.']);
-                exit;
-            }
-            $bin = file_get_contents($_FILES['payload_file']['tmp_name']);
-            if ($bin === false) {
-                echo json_encode(['success'=>false,'message'=>'Failed to read payload file.']);
-                exit;
-            }
-            $meta = json_encode([
-                'name' => $_FILES['payload_file']['name'] ?? 'payload.bin',
-                'type' => $_FILES['payload_file']['type'] ?? 'application/octet-stream',
-            ], JSON_UNESCAPED_SLASHES);
-            $payload = base64_encode("STEGFILE1\n" . $meta . "\n\n" . $bin);
-        }
+        $stegoKey = trim($_POST['stego_key']  ?? '');
+        $pType    = $_POST['payload_type']     ?? 'text';
+        $stegMeth = $_POST['steg_method']      ?? 'lsb';
+        $chainRaw = json_decode($_POST['chain_data'] ?? '[]', true) ?: [];
+        $errMsg   = '';
 
         if (empty($stegoKey)) { echo json_encode(['success'=>false,'message'=>'Stego key is required.']); exit; }
-        if (empty($payload) && $pType === 'text') { echo json_encode(['success'=>false,'message'=>'Payload cannot be empty.']); exit; }
 
-        $uploaded = $handler->uploadCarrier($_FILES['carrier'], $uid);
-        if (!$uploaded['success']) { echo json_encode($uploaded); exit; }
+        switch ($pType) {
+            case 'file':
+                $payload = filePayload('payload_file', $errMsg);
+                break;
+            case 'image':
+                $payload = imagePayload('payload_image', $errMsg);
+                break;
+            case 'zero_width':
+                // ZW text-in-text — remap to text payload + zero_width method
+                $pType    = 'text';
+                $stegMeth = 'zero_width';
+                $payload  = $_POST['payload_text'] ?? '';
+                if (trim($payload) === '') $errMsg = 'Message text is required for Zero-Width steg.';
+                break;
+            default: // text
+                $payload = $_POST['payload_text'] ?? '';
+                if (trim($payload) === '') $errMsg = 'Payload text cannot be empty.';
+        }
 
-        $result = $handler->embed($uid, $uploaded['file_id'], null, $pType, $payload, $stegoKey, $stegMeth, $chainRaw);
+        if (!empty($errMsg) || $payload === null) {
+            echo json_encode(['success'=>false,'message'=>$errMsg ?: 'Payload error.']); exit;
+        }
+
+        $carrier = resolveCarrier($handler, $uid, $errMsg);
+        if (!$carrier) { echo json_encode(['success'=>false,'message'=>$errMsg]); exit; }
+
+        $result = $handler->embed($uid, $carrier['file_id'], null, $pType, $payload, $stegoKey, $stegMeth, $chainRaw);
+
+        if ($result['success'] && $uid === 0) {
+            $_SESSION['guest_file_ids'] = array_unique(array_merge(
+                $_SESSION['guest_file_ids'] ?? [],
+                [$result['file_id'], $carrier['file_id']]
+            ));
+        }
+
         echo json_encode($result);
         exit;
     }
 
-    /* ── EXTRACT ── */
+    /* extract */
     if ($action === 'extract') {
-        if (empty($_FILES['stego_file']['name']) || $_FILES['stego_file']['error'] !== UPLOAD_ERR_OK) {
-            echo json_encode(['success'=>false,'message'=>'No stego file or upload error.']);
-            exit;
-        }
-
-        $stegoKey = trim($_POST['stego_key']  ?? '');
-        $stegMeth = $_POST['steg_method']     ?? 'lsb';
+        $stegoKey = trim($_POST['stego_key'] ?? '');
+        $stegMeth = $_POST['steg_method']    ?? 'lsb';
         $chainRaw = json_decode($_POST['chain_data'] ?? '[]', true) ?: [];
+        $errMsg   = '';
 
         if (empty($stegoKey)) { echo json_encode(['success'=>false,'message'=>'Stego key is required.']); exit; }
 
-        $uploaded = $handler->uploadCarrier($_FILES['stego_file'], $uid);
-        if (!$uploaded['success']) { echo json_encode($uploaded); exit; }
+        $stego = resolveStego($handler, $uid, $errMsg);
+        if (!$stego) { echo json_encode(['success'=>false,'message'=>$errMsg]); exit; }
 
-        $result = $handler->extract($uid, $uploaded['file_id'], $stegoKey, $stegMeth, $chainRaw);
-        echo json_encode($result);
+        echo json_encode($handler->extract($uid, $stego['file_id'], $stegoKey, $stegMeth, $chainRaw));
+        exit;
+    }
+
+    /* create_share */
+    if ($action === 'create_share') {
+        if ($auth->isGuest()) { echo json_encode(['success'=>false,'message'=>'Guests cannot create share links. Please register.']); exit; }
+        echo json_encode($handler->createShareLink(
+            (int)($_POST['op_id']         ?? 0), $uid,
+            !empty($_POST['password'])    ? $_POST['password']   : null,
+            (int)($_POST['max_downloads'] ?? 0),
+            !empty($_POST['expires_at'])  ? $_POST['expires_at'] : null,
+            $_POST['chain_hint']          ?? ''
+        ));
+        exit;
+    }
+
+    /* revoke_share */
+    if ($action === 'revoke_share') {
+        if ($auth->isGuest()) { echo json_encode(['success'=>false,'message'=>'Not allowed.']); exit; }
+        $shareId = (int)($_POST['share_id'] ?? 0);
+        if (!$shareId) { echo json_encode(['success'=>false,'message'=>'Invalid share ID.']); exit; }
+        $db    = Database::getInstance();
+        $share = $db->fetchOne(
+            "SELECT sf.share_id FROM shared_files sf JOIN stego_operations o ON sf.op_id=o.op_id WHERE sf.share_id=? AND o.user_id=? AND sf.is_active=1",
+            [$shareId, $uid]
+        );
+        if (!$share) { echo json_encode(['success'=>false,'message'=>'Not found or already revoked.']); exit; }
+        $db->query("UPDATE shared_files SET is_active=0 WHERE share_id=?", [$shareId]);
+        echo json_encode(['success'=>true]);
         exit;
     }
 

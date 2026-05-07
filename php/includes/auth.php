@@ -28,24 +28,21 @@ public function login(string $username,string $password,string $ip): array {
     if(!$user){$this->logAction(null,'login_failed',"No user: $username",$ip,'failed');return['success'=>false,'message'=>'No account found with that username or email.'];}
     if(!password_verify($password.$user['salt'],$user['password_hash'])){$this->logAction(null,'login_failed',"Bad pw: $username",$ip,'failed');return['success'=>false,'message'=>'Wrong password. Try again.'];}
     session_regenerate_id(true);
-    $_SESSION['user_id']=$user['user_id'];
-    $_SESSION['username']=$user['username'];
-    $_SESSION['role']=$user['role'];
-    $_SESSION['login_at']=time();
-    $_SESSION['guest']=false;
+    $_SESSION['user_id']=$user['user_id'];$_SESSION['username']=$user['username'];$_SESSION['role']=$user['role'];$_SESSION['login_at']=time();$_SESSION['guest']=false;
     $this->db->query("UPDATE users SET last_login=NOW() WHERE user_id=?",[$user['user_id']]);
     $this->logAction($user['user_id'],'login','Successful login',$ip);
     return['success'=>true,'message'=>'Welcome, '.$user['username'].'!'];
 }
 public function startGuestSession(): void {
     session_regenerate_id(true);
-    $_SESSION['user_id']=0;$_SESSION['username']='Guest';$_SESSION['role']='guest';$_SESSION['login_at']=time();$_SESSION['guest']=true;
+    $row=$this->db->fetchOne("SELECT COUNT(*) as n FROM operation_logs WHERE action_type='guest_start'");
+    $guestNum=(int)($row['n']??0)+1;
+    $_SESSION['user_id']=0;$_SESSION['username']='Guest';$_SESSION['guest_num']=$guestNum;$_SESSION['role']='guest';$_SESSION['login_at']=time();$_SESSION['guest']=true;$_SESSION['guest_file_ids']=[];
+    $this->logAction(null,'guest_start',"Guest #$guestNum started");
 }
 public function logout(): void {
     if(isset($_SESSION['user_id'])&&empty($_SESSION['guest']))$this->logAction($_SESSION['user_id'],'logout','User logged out');
-    session_destroy();
-    header('Location: '.SITE_URL.'/index.php');
-    exit;
+    session_destroy();header('Location: '.SITE_URL.'/index.php');exit;
 }
 public function isLoggedIn(): bool {
     if(!isset($_SESSION['user_id'],$_SESSION['login_at'])||(time()-$_SESSION['login_at'])>=SESSION_LIFETIME)return false;
@@ -56,16 +53,11 @@ public function isLoggedIn(): bool {
 }
 public function isGuest(): bool{return!empty($_SESSION['guest']);}
 public function isAdmin(): bool{return$this->isLoggedIn()&&($_SESSION['role']??'')==='admin';}
-public function requireLogin(): void{
-    if(!$this->isLoggedIn()){header('Location: '.SITE_URL.'/index.php?redirect='.urlencode($_SERVER['REQUEST_URI']));exit;}
-}
-public function requireAdmin(): void{
-    $this->requireLogin();
-    if(!$this->isAdmin()){header('Location: '.SITE_URL.'/403.php');exit;}
-}
+public function requireLogin(): void{if(!$this->isLoggedIn()){header('Location: '.SITE_URL.'/index.php?redirect='.urlencode($_SERVER['REQUEST_URI']));exit;}}
+public function requireAdmin(): void{$this->requireLogin();if(!$this->isAdmin()){header('Location: '.SITE_URL.'/403.php');exit;}}
 public function currentUser(): ?array {
     if(!$this->isLoggedIn())return null;
-    if($this->isGuest())return['user_id'=>0,'username'=>'Guest','email'=>'','role'=>'guest','storage_used'=>0,'steg_key'=>'','created_at'=>date('Y-m-d'),'last_login'=>date('Y-m-d')];
+    if($this->isGuest()){$num=$_SESSION['guest_num']??0;return['user_id'=>0,'username'=>'Guest#'.$num,'display_name'=>'Guest','guest_num'=>$num,'email'=>'','role'=>'guest','storage_used'=>0,'steg_key'=>'','created_at'=>date('Y-m-d'),'last_login'=>date('Y-m-d')];}
     return$this->db->fetchOne("SELECT user_id,username,email,role,storage_used,steg_key,created_at,last_login FROM users WHERE user_id=?",[$_SESSION['user_id']]);
 }
 public function logAction(?int $userId,string $action,string $detail='',string $ip='',string $status='success'): void {
