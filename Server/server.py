@@ -18,6 +18,7 @@ STEG_METHODS = {
         {'slug': 'xor_pixel',  'name': 'XOR Pixel',      'desc': 'Key-stream XOR on LSBs — keyed steg'},
         {'slug': 'alpha',      'name': 'Alpha Channel',   'desc': 'Hidden in transparency (PNG only)'},
         {'slug': 'img_in_img', 'name': 'Image-in-Image',  'desc': '4-bit nibble merge — embed files inside images'},
+        {'slug': 'dct',        'name': 'DCT',             'desc': 'Embed in mid-frequency DCT coefficients of 8×8 luma blocks — JPEG-style, perceptually robust'},
     ],
     'audio': [
         {'slug': 'wav_lsb', 'name': 'WAV LSB',      'desc': 'Least-significant bit in audio samples'},
@@ -117,6 +118,15 @@ def embed():
     except Exception as e:
         return jsonify({'error': f'Steg failed: {e}'}), 500
 
+    # Use the method actually applied (may differ from requested when DCT fell back)
+    actual_method = getattr(steg_mod.embed, '_last_actual_method', None) or steg_method
+    fallback_note = None
+    if actual_method != steg_method:
+        fallback_note = (
+            f'Payload too large for {steg_method.upper()} — '
+            f'embedded with {actual_method.upper()} instead.'
+        )
+
     carrier_size = os.path.getsize(carrier_path)
     output_size  = os.path.getsize(out_path) if os.path.exists(out_path) else 0
 
@@ -127,8 +137,9 @@ def embed():
         'payload_size':    len(encrypted),
         'carrier_size':    carrier_size,
         'output_size':     output_size,
-        'steg_method':     steg_method,
+        'steg_method':     actual_method,
         'layers':          len(steps),
+        **(({'fallback_note': fallback_note}) if fallback_note else {}),
     })
 
 @app.route('/api/extract', methods=['POST'])
@@ -157,24 +168,8 @@ def extract():
 
     try:
         encrypted = steg_mod.extract(stego_path, stego_key, steg_method)
-    except Exception as first_err:
-        # Image payloads may come from different embed methods; auto-fallback helps recovery.
-        if file_type != 'image':
-            return jsonify({'error': f'Extract failed: {first_err}'}), 500
-        extracted = None
-        last_err = first_err
-        for m in ['lsb', 'xor_pixel', 'alpha', 'img_in_img']:
-            if m == steg_method:
-                continue
-            try:
-                extracted = steg_mod.extract(stego_path, stego_key, m)
-                steg_method = m
-                break
-            except Exception as e:
-                last_err = e
-        if extracted is None:
-            return jsonify({'error': f'Extract failed: {last_err}'}), 500
-        encrypted = extracted
+    except Exception as e:
+        return jsonify({'error': f'Extract failed: {e}'}), 500
 
     try:
         plain = decrypt_chain(encrypted, stego_key, steps)
