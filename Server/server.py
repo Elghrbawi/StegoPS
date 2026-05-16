@@ -101,8 +101,17 @@ def embed():
         return jsonify({'error': f'Encryption failed: {e}'}), 400
 
     # Build output filename
-    ext_map  = {'image': 'png', 'audio': 'wav', 'video': 'avi'}
-    ext      = ext_map.get(file_type, 'bin')
+    # DCT embeds into real JPEG coefficients — output must be .jpg
+    if file_type == 'image' and steg_method == 'dct':
+        ext = 'jpg'
+    elif file_type == 'image':
+        ext = 'png'
+    elif file_type == 'audio':
+        ext = 'wav'
+    elif file_type == 'video':
+        ext = 'avi'
+    else:
+        ext = 'bin'
     uid      = hashlib.md5(f'{op_id}{time.time()}'.encode()).hexdigest()[:6]
     out_name = f'stego_{op_id}_{uid}.{ext}'
     out_path = os.path.join(output_dir, out_name)

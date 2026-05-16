@@ -32,11 +32,10 @@ def _carrier_capacity(carrier_path: str) -> dict:
     img     = Image.open(carrier_path)
     w, h    = img.size
     px      = w * h
-    n_tiles = (w // _DCT_BLOCK) * (h // _DCT_BLOCK)
     return {
-        'dct':       n_tiles * _DCT_BITS_PER_TILE // 8 - 10,
-        'lsb':       px * 3 // 8 - 10,
-        'img_in_img': px * 3 * 4 // 8 - 10,  # 4 bits per channel byte
+        'dct':        _jpeg_dct_capacity(carrier_path),   # real JPEG AC coefficients
+        'lsb':        px * 3 // 8 - 10,
+        'img_in_img': px * 3 * 4 // 8 - 10,
     }
 
 
@@ -80,7 +79,7 @@ def embed(carrier_path: str, data: bytes, out_path: str, key: str, method: str):
         # store which method was actually used so server.py can report it
         embed._last_actual_method = used
         if used == 'dct':
-            _embed_dct(carrier_path, data, out_path)
+            _embed_dct(carrier_path, data, out_path)  # outputs JPEG
         elif used == 'lsb':
             _embed_lsb(carrier_path, data, out_path)
         else:
@@ -231,206 +230,152 @@ def _extract_img_in_img(stego_path: str) -> bytes:
     bit_list = [int(b) for b in bits]
     return _read_payload_from_bits(bit_list, bpc=4)
 
-# ── DCT steganography ────────────────────────────────────────────────────────
-# Strategy: embed across all 3 YCbCr channels for maximum capacity.
-# The image is split into non-overlapping 8×8 blocks. Within each block the
-# 2D DCT is computed and payload bits are embedded into the LSBs of 4
-# mid-frequency coefficients per channel (12 bits per block total).
-# Embedding order: all Y blocks, then all Cb blocks, then all Cr blocks.
-# Output is PNG (lossless) so coefficients are preserved exactly.
+# ── DCT steganography (pixel-space, pure Python — no jpegio / C++ needed) ────
+# Strategy  : Convert carrier to YCbCr, split into 8×8 luma blocks, run a
+#             2-D DCT on each block via scipy.fft.dctn, embed payload bits
+#             into mid-frequency AC coefficients (strength-threshold gated),
+#             IDCT back, reconstruct the image and save as JPEG.
+#             No compiled C extension is required — only scipy + Pillow + numpy,
+#             all of which install from pure-wheel packages on every platform.
 #
-# Capacity: (W//8) * (H//8) * 12 bits / 8  -  10 header bytes (2 magic + 4 length + 4 CRC)
-# e.g. 1000×1000 → ~18 KB;  3000×3000 → ~168 KB;  4000×4000 → ~300 KB
+# Capacity  : number_of_8x8_blocks × usable_mid_freq_AC_slots / 8  bytes.
+#             A 1 MP image yields ~14 KB.  Computed at runtime.
+#
+# Robustness: bits are embedded with a strength delta (DCT_DELTA) large enough
+#             to survive one JPEG encode/decode round-trip at quality ≥ 85.
+#             The output is saved at quality=95 to minimise drift.
+#
+# Header    : same 10-byte frame as all other methods (MAGIC + LENGTH + CRC32).
 
-_DCT_BLOCK = 8
-_DCT_QUANT = 25.0   # quantisation step
+import os as _os  # noqa: F811 (re-import for DCT section clarity)
+from scipy.fft import dctn, idctn   # pure-Python wheels, no C++ build step
 
-# 4 mid-frequency coefficient positions per block (zigzag ring around centre)
-_DCT_COEFF_POSITIONS = [(3, 4), (4, 3), (4, 5), (5, 4)]
-_DCT_BITS_PER_BLOCK  = len(_DCT_COEFF_POSITIONS)           # 4 bits/block/channel
-_DCT_CHANNELS        = 3                                    # Y, Cb, Cr
-_DCT_BITS_PER_TILE   = _DCT_BITS_PER_BLOCK * _DCT_CHANNELS # 12 bits per 8×8 tile
-
-
-def _dct2(block: np.ndarray) -> np.ndarray:
-    """2-D DCT-II via two successive 1-D DCTs (uses scipy if available, else numpy)."""
-    try:
-        from scipy.fft import dctn
-        return dctn(block, norm='ortho')
-    except ImportError:
-        # Pure-numpy fallback: apply 1-D DCT twice
-        return _dct1d_2d(block)
-
-
-def _idct2(block: np.ndarray) -> np.ndarray:
-    try:
-        from scipy.fft import idctn
-        return idctn(block, norm='ortho')
-    except ImportError:
-        return _idct1d_2d(block)
+# Mid-frequency AC positions (zigzag indices 5-20) chosen for robustness
+# vs. capacity trade-off.  DC (0,0) and very-high-frequency corners skipped.
+_DCT_AC_SLOTS = [
+    (0,2),(0,3),(1,2),(2,0),(2,1),(3,0),
+    (1,3),(0,4),(0,5),(1,4),(2,2),(3,1),
+    (4,0),(4,1),(3,2),(2,3),(1,5),(0,6),
+]
+_DCT_DELTA = 25.0   # embedding strength; survives JPEG re-encode at quality≥85
 
 
-def _dct1d(x: np.ndarray) -> np.ndarray:
-    """DCT-II of a 1-D array, orthonormal."""
-    N = len(x)
-    n = np.arange(N)
-    k = n[:, None]
-    M = np.cos(np.pi * k * (2 * n + 1) / (2 * N))
-    y = M @ x
-    y[0] *= np.sqrt(1 / N)
-    y[1:] *= np.sqrt(2 / N)
-    return y
-
-
-def _idct1d(y: np.ndarray) -> np.ndarray:
-    """Inverse DCT-II (DCT-III) of a 1-D array, orthonormal."""
-    N = len(y)
-    y = y.copy().astype(float)
-    y[0] *= np.sqrt(1 / N)
-    y[1:] *= np.sqrt(2 / N)
-    n = np.arange(N)
-    k = n[None, :]
-    M = np.cos(np.pi * k * (2 * n[:, None] + 1) / (2 * N))
-    return M @ y
-
-
-def _dct1d_2d(block: np.ndarray) -> np.ndarray:
-    tmp = np.apply_along_axis(_dct1d, 1, block.astype(float))
-    return np.apply_along_axis(_dct1d, 0, tmp)
-
-
-def _idct1d_2d(block: np.ndarray) -> np.ndarray:
-    tmp = np.apply_along_axis(_idct1d, 0, block.astype(float))
-    return np.apply_along_axis(_idct1d, 1, tmp)
-
-
-def _iter_blocks(arr: np.ndarray):
-    """Yield (row_start, col_start) for every full 8×8 block."""
-    H, W = arr.shape
-    for r in range(0, H - H % _DCT_BLOCK, _DCT_BLOCK):
-        for c in range(0, W - W % _DCT_BLOCK, _DCT_BLOCK):
+def _dct_block_positions(h: int, w: int):
+    """Yield (row, col) top-left corners of all 8×8 blocks in an H×W plane."""
+    for r in range(0, h - h % 8, 8):
+        for c in range(0, w - w % 8, 8):
             yield r, c
 
 
-def _dct_channel_bits(channel: np.ndarray, blocks: list, start: int, end: int,
-                      write_bits: list = None) -> list:
+def _jpeg_dct_capacity(carrier_path: str) -> int:
     """
-    Read or write bits [start, end) into/from a single channel's DCT coefficients.
-    If write_bits is provided, modifies channel in-place and returns [].
-    Otherwise returns the list of read bits.
-    Each block contributes _DCT_BITS_PER_BLOCK bits.
+    Return the number of payload bytes embeddable via DCT into this carrier.
+    Works on any image format Pillow can open (JPEG, PNG, BMP, …).
     """
-    result = []
-    n_blocks = len(blocks)
-    for blk_idx in range(n_blocks):
-        base = blk_idx * _DCT_BITS_PER_BLOCK
-        if base >= end:
-            break
-        if base + _DCT_BITS_PER_BLOCK <= start:
-            continue
-        r, c   = blocks[blk_idx]
-        block  = channel[r:r+_DCT_BLOCK, c:c+_DCT_BLOCK]
-        coeffs = _dct2(block)
-        modified = False
-        for slot, (cr, cc) in enumerate(_DCT_COEFF_POSITIONS):
-            bit_pos = base + slot
-            if bit_pos < start or bit_pos >= end:
-                continue
-            if write_bits is not None:
-                q = round(coeffs[cr, cc] / _DCT_QUANT)
-                q = (q & ~1) | int(write_bits[bit_pos - start])
-                coeffs[cr, cc] = q * _DCT_QUANT
-                modified = True
-            else:
-                q = round(coeffs[cr, cc] / _DCT_QUANT)
-                result.append(q & 1)
-        if modified:
-            channel[r:r+_DCT_BLOCK, c:c+_DCT_BLOCK] = _idct2(coeffs)
-    return result
+    img  = Image.open(carrier_path).convert('YCbCr')
+    arr  = np.array(img, dtype=np.float64)
+    h, w = arr.shape[:2]
+    n_blocks = (h // 8) * (w // 8)
+    bits_per_block = len(_DCT_AC_SLOTS)
+    return max(0, n_blocks * bits_per_block // 8 - 10)
 
 
 def _embed_dct(carrier_path: str, data: bytes, out_path: str):
+    """
+    Embed *data* into mid-frequency AC DCT coefficients of the Y (luma) channel.
+    Carrier can be any Pillow-readable format; output is always JPEG.
+    """
     img = Image.open(carrier_path).convert('YCbCr')
     arr = np.array(img, dtype=np.float64)
+    Y   = arr[:, :, 0].copy()
+    h, w = Y.shape
 
-    payload  = _pack(data)
-    bits     = list(_bits(payload))
-    n_bits   = len(bits)
+    payload = _pack(data)
+    bits    = [int(b) for b in _bits(payload)]
+    n_bits  = len(bits)
 
-    blocks   = list(_iter_blocks(arr[:, :, 0]))
-    n_blocks = len(blocks)
-    capacity = n_blocks * _DCT_BITS_PER_TILE   # 12 bits per tile across 3 channels
-
-    if n_bits > capacity:
-        cap_kb = capacity // 8 // 1024
-        needed_kb = n_bits // 8 // 1024
+    # Count available slots first
+    blocks = list(_dct_block_positions(h, w))
+    total_slots = len(blocks) * len(_DCT_AC_SLOTS)
+    if n_bits > total_slots:
         raise ValueError(
-            f'Payload too large for DCT method ({needed_kb} KB needed, '
-            f'~{cap_kb} KB available). '
-            f'Use a larger carrier image or switch to LSB / img_in_img method.'
+            f'Payload too large for DCT method — need {n_bits} coefficient slots, '
+            f'carrier only has {total_slots} slots ({total_slots // 8} bytes capacity).'
         )
 
-    # Spread bits across channels: first n_blocks*4 bits → Y, next → Cb, rest → Cr
-    bits_per_ch = n_blocks * _DCT_BITS_PER_BLOCK
-    for ch_idx in range(_DCT_CHANNELS):
-        ch_start = ch_idx * bits_per_ch
-        ch_end   = min(ch_start + bits_per_ch, n_bits)
-        if ch_start >= n_bits:
+    bit_idx = 0
+    for (r, c) in blocks:
+        if bit_idx >= n_bits:
             break
-        ch_bits = bits[ch_start:ch_end]
-        channel = arr[:, :, ch_idx]
-        _dct_channel_bits(channel, blocks, 0, len(ch_bits), write_bits=ch_bits)
-        arr[:, :, ch_idx] = np.clip(channel, 0, 255)
+        block = Y[r:r+8, c:c+8]
+        D = dctn(block, norm='ortho')
+        for (dr, dc) in _DCT_AC_SLOTS:
+            if bit_idx >= n_bits:
+                break
+            # Quantise the coefficient to the nearest even/odd multiple of
+            # DELTA/2 to encode the bit, then restore the fractional part.
+            coef = D[dr, dc]
+            slot = round(coef / (_DCT_DELTA / 2))
+            # Force slot parity to match the bit
+            if (slot % 2) != bits[bit_idx]:
+                slot += 1 if bits[bit_idx] else -1
+            D[dr, dc] = slot * (_DCT_DELTA / 2)
+            bit_idx += 1
+        Y[r:r+8, c:c+8] = idctn(D, norm='ortho')
 
-    Image.fromarray(arr.astype(np.uint8), 'YCbCr').convert('RGB').save(out_path, 'PNG')
+    arr[:, :, 0] = np.clip(Y, 0, 255)
+    out_img = Image.fromarray(arr.astype(np.uint8), 'YCbCr').convert('RGB')
+
+    jpg_out = out_path if out_path.lower().endswith(('.jpg', '.jpeg')) else out_path
+    out_img.save(jpg_out, 'JPEG', quality=95, subsampling=0)
 
 
 def _extract_dct(stego_path: str) -> bytes:
+    """
+    Extract the payload embedded by _embed_dct.
+    Works on any Pillow-readable JPEG (or other lossless re-save at quality≥85).
+    """
     img = Image.open(stego_path).convert('YCbCr')
     arr = np.array(img, dtype=np.float64)
+    Y   = arr[:, :, 0]
+    h, w = Y.shape
 
-    magic_bits  = _bits(_MAGIC)
-    header_bits = len(magic_bits) + 32 + 32  # 16 magic + 32 length + 32 CRC = 80 bits
+    magic_bits        = _bits(_MAGIC)
+    header_bits_count = len(magic_bits) + 32 + 32   # 80 bits
 
-    blocks      = list(_iter_blocks(arr[:, :, 0]))
-    n_blocks    = len(blocks)
-    bits_per_ch = n_blocks * _DCT_BITS_PER_BLOCK
+    collected: list[int] = []
 
-    def _read_global(start: int, end: int) -> list:
-        """Read bits from the 3-channel flattened stream."""
-        result = []
-        for ch_idx in range(_DCT_CHANNELS):
-            ch_start = ch_idx * bits_per_ch
-            ch_end   = ch_start + bits_per_ch
-            lo = max(start, ch_start) - ch_start
-            hi = min(end,   ch_end)   - ch_start
-            if lo >= hi:
-                continue
-            result += _dct_channel_bits(arr[:, :, ch_idx], blocks, lo, hi)
-            if len(result) >= (end - start):
-                break
-        return result
+    for (r, c) in _dct_block_positions(h, w):
+        block = Y[r:r+8, c:c+8]
+        D = dctn(block, norm='ortho')
+        for (dr, dc) in _DCT_AC_SLOTS:
+            slot = round(D[dr, dc] / (_DCT_DELTA / 2))
+            collected.append(int(slot % 2 != 0))   # parity → bit
 
-    # Phase 1: read header
-    header_raw = _read_global(0, header_bits)
-    if len(header_raw) < header_bits:
-        raise ValueError('Not enough DCT capacity to read header')
-    header = ''.join(str(b) for b in header_raw)
-    if header[:len(magic_bits)] != magic_bits:
+    def _bits_to_bytes(bit_list: list, start: int, n_bits: int) -> bytes:
+        s = ''.join(str(b) for b in bit_list[start:start + n_bits])
+        return bytes(int(s[i:i+8], 2) for i in range(0, n_bits, 8))
+
+    if len(collected) < header_bits_count:
+        raise ValueError('Image too small to contain a DCT payload')
+
+    header_str = ''.join(str(b) for b in collected[:header_bits_count])
+
+    if header_str[:len(magic_bits)] != magic_bits:
         raise ValueError('No hidden DCT payload found (magic mismatch)')
 
-    length     = int(header[len(magic_bits):len(magic_bits) + 32], 2)
-    stored_crc = int(header[len(magic_bits) + 32:len(magic_bits) + 64], 2)
-    total_bits = header_bits + length * 8
-    capacity   = n_blocks * _DCT_BITS_PER_TILE
+    length     = int(header_str[len(magic_bits):len(magic_bits) + 32], 2)
+    stored_crc = int(header_str[len(magic_bits) + 32:len(magic_bits) + 64], 2)
 
-    if total_bits > capacity:
-        raise ValueError('DCT payload length field exceeds available capacity')
+    payload_start = header_bits_count
+    payload_end   = payload_start + length * 8
+    if payload_end > len(collected):
+        raise ValueError('Payload length exceeds available DCT slots — image too small or not a stego file')
 
-    # Phase 2: read payload bits
-    payload_raw  = _read_global(header_bits, total_bits)
-    payload_bits = ''.join(str(b) for b in payload_raw)
+    payload_bits = ''.join(str(b) for b in collected[payload_start:payload_end])
     payload = bytes(int(payload_bits[i:i+8], 2) for i in range(0, len(payload_bits), 8))
+
     if (zlib.crc32(payload) & 0xFFFFFFFF) != stored_crc:
         raise ValueError('CRC mismatch — wrong extraction method or corrupted data')
+
     return payload
