@@ -62,26 +62,22 @@ def embed(carrier_path: str, data: bytes, out_path: str, key: str, method: str):
             raise ValueError(f'Cannot read carrier: {e}')
 
         if payload_size <= cap['dct']:
-            used = 'dct'
-        elif payload_size <= cap['lsb']:
-            used = 'lsb'
-        elif payload_size <= cap['img_in_img']:
-            used = 'img_in_img'
-        else:
-            max_kb = cap['img_in_img'] // 1024
-            raise ValueError(
-                f'Payload too large ({payload_size:,} bytes) for this carrier. '
-                f'Maximum capacity (img_in_img): {max_kb:,} KB. '
-                f'Use a larger carrier image.'
-            )
-
-        embed._last_actual_method = used
-        if used == 'dct':
+            embed._last_actual_method = 'dct'
             _embed_dct(carrier_path, data, out_path)
-        elif used == 'lsb':
-            _embed_lsb(carrier_path, data, out_path)
         else:
-            _embed_img_in_img(carrier_path, data, out_path)
+            # Hard error — never silently fall back so the user always
+            # knows which method was actually used during extraction.
+            dct_kb     = cap['dct'] // 1024
+            payload_kb = payload_size // 1024
+            raise ValueError(
+                f'Payload too large for DCT '
+                f'({payload_size:,} bytes / ~{payload_kb} KB). '
+                f'DCT capacity on this carrier: {cap["dct"]:,} bytes / ~{dct_kb} KB. '
+                f'Options:\n'
+                f'  1. Use a larger carrier image.\n'
+                f'  2. Switch to LSB method (capacity: {cap["lsb"]:,} bytes).\n'
+                f'  3. Switch to img_in_img method (capacity: {cap["img_in_img"]:,} bytes).'
+            )
         return
 
     embed._last_actual_method = method
@@ -510,12 +506,11 @@ def _scan_safe_ac_positions(logical: bytearray, dht: dict,
 def _jpeg_dct_capacity(carrier_path: str) -> int:
     """
     Return the maximum payload size in bytes for DCT embedding on this carrier.
-    Accepts any image format Pillow supports — non-JPEG files are converted to
-    JPEG in memory first (same as _embed_dct) so the capacity figure is accurate.
-    Returns 0 if the carrier cannot be parsed as / converted to a valid JPEG.
+    Parses the real JPEG structure; returns 0 if the file is not a valid JPEG.
     """
     try:
-        raw         = _to_jpeg_bytes(carrier_path)
+        with open(carrier_path, 'rb') as f:
+            raw = bytearray(f.read())
         dht, sof, comp_scan, sos_off = _jpeg_parse(raw)
         logical, _  = _jpeg_destuff(raw, sos_off)
         slots       = _scan_safe_ac_positions(logical, dht, sof, comp_scan)
@@ -524,42 +519,15 @@ def _jpeg_dct_capacity(carrier_path: str) -> int:
         return 0
 
 
-def _to_jpeg_bytes(carrier_path: str) -> bytearray:
-    """
-    Return the raw bytes of *carrier_path* as a JPEG bytearray.
-    If the file is already a JPEG (magic bytes 0xFF 0xD8) it is read as-is.
-    Any other format (PNG, BMP, TIFF, WebP, ...) is opened with Pillow,
-    converted to RGB, and encoded to JPEG in-memory at quality 95.
-    This lets the DCT method accept any image Pillow can open as a carrier.
-    """
-    with open(carrier_path, 'rb') as f:
-        magic = f.read(2)
-
-    if magic == b'\xff\xd8':
-        # Already a JPEG — read raw bytes directly, no re-encoding
-        with open(carrier_path, 'rb') as f:
-            return bytearray(f.read())
-
-    # Non-JPEG carrier — convert to JPEG in memory
-    from io import BytesIO
-    img = Image.open(carrier_path).convert('RGB')
-    buf = BytesIO()
-    img.save(buf, format='JPEG', quality=95, subsampling=0)
-    buf.seek(0)
-    return bytearray(buf.read())
-
-
 def _embed_dct(carrier_path: str, data: bytes, out_path: str):
     """
     Embed *data* into the JPEG bitstream of *carrier_path* by patching
     the VLI LSBs of safe Y-channel AC coefficients.
     Output is a valid JPEG written to *out_path*.
-
-    Carrier can be any image format Pillow supports (JPEG, PNG, BMP, ...).
-    Non-JPEG carriers are automatically converted to JPEG at quality 95
-    before embedding — the original carrier file is never modified.
+    Carrier must be a JPEG file.
     """
-    raw = _to_jpeg_bytes(carrier_path)
+    with open(carrier_path, 'rb') as f:
+        raw = bytearray(f.read())
 
     dht, sof, comp_scan, sos_off = _jpeg_parse(raw)
     logical, scan_end = _jpeg_destuff(raw, sos_off)
