@@ -1,5 +1,5 @@
 import importlib
-
+# ── ALGO MAP ──────────────────────────────────────────────────────────────────
 ALGO_MAP = {
     'caesar':    'caesar',
     'vigenere':  'vigenere',
@@ -10,27 +10,16 @@ ALGO_MAP = {
     'des3':      'des3_cipher',
     'triple_des':'des3_cipher',
 }
-
+# ── CHAIN ─────────────────────────────────────────────────────────────────────
 def encrypt_chain(data: bytes, stego_key: str, steps: list) -> bytes:
-    result = data
     for step in steps:
-        slug    = step.get('slug', '')
-        key     = step.get('key') or stego_key
-        mod_name = ALGO_MAP.get(slug)
-        if not mod_name:
-            continue
-        mod = importlib.import_module(mod_name)
-        result = mod.encrypt(result, key)
-    return result
-
+        mod = ALGO_MAP.get(step.get('slug', ''))
+        if mod:
+            data = importlib.import_module(mod).encrypt(data, step.get('key') or stego_key)
+    return data
 def decrypt_chain(data: bytes, stego_key: str, steps: list) -> bytes:
-    result = data
     for step in reversed(steps):
-        slug     = step.get('slug', '')
-        key      = step.get('key') or stego_key
-        mod_name = ALGO_MAP.get(slug)
-        if not mod_name:
-            continue
-        mod = importlib.import_module(mod_name)
-        result = mod.decrypt(result, key)
-    return result
+        mod = ALGO_MAP.get(step.get('slug', ''))
+        if mod:
+            data = importlib.import_module(mod).decrypt(data, step.get('key') or stego_key)
+    return data
