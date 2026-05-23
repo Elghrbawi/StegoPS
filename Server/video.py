@@ -1,8 +1,12 @@
 import shutil
 import cv2
 import numpy as np
+
 _MAGIC = b'\xDE\xAD'
-def _pack(data: bytes) -> bytes: return _MAGIC + len(data).to_bytes(4, 'big') + data
+
+def _pack(data: bytes) -> bytes:
+    return _MAGIC + len(data).to_bytes(4, 'big') + data
+
 def _read_frames(path: str):
     cap = cv2.VideoCapture(path)
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -14,20 +18,22 @@ def _read_frames(path: str):
         frames.append(frame.copy())
     cap.release()
     return frames, fps, w, h
+
 def _write_frames(frames, fps, w, h, out_path):
     writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*'FFV1'), fps, (w, h))
     if not writer.isOpened():
         writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*'XVID'), fps, (w, h))
     for f in frames: writer.write(f)
     writer.release()
-# ── EMBED / EXTRACT ───────────────────────────────────────────────────────────
+
 def embed(carrier_path: str, data: bytes, out_path: str, key: str, method: str):
     if method == 'frame_lsb': _embed_frame_lsb(carrier_path, data, out_path)
     else: raise ValueError(f'Unknown video steg method: {method}')
+
 def extract(stego_path: str, key: str, method: str) -> bytes:
     if method == 'frame_lsb': return _extract_frame_lsb(stego_path)
     else: raise ValueError(f'Unknown video steg method: {method}')
-# ── FRAME LSB ─────────────────────────────────────────────────────────────────
+
 def _embed_frame_lsb(carrier_path: str, data: bytes, out_path: str):
     frames, fps, w, h = _read_frames(carrier_path)
     if not frames: raise ValueError('Could not read video frames')
@@ -46,6 +52,7 @@ def _embed_frame_lsb(carrier_path: str, data: bytes, out_path: str):
     avi = out_path if out_path.endswith('.avi') else out_path.rsplit('.', 1)[0] + '.avi'
     _write_frames(frames, fps, w, h, avi)
     if avi != out_path: shutil.move(avi, out_path)
+
 def _extract_frame_lsb(stego_path: str) -> bytes:
     frames, _, _, _ = _read_frames(stego_path)
     if not frames: raise ValueError('Could not read video frames')

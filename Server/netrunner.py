@@ -1,7 +1,5 @@
-# ── NETRUNNER CIPHER ─────────────────────────────────────────────────────────
 class NetrunnerCipher:
-    def __init__(self):
-        self.CYBER_MASK = 0xF0
+    def __init__(self): self.CYBER_MASK = 0xF0
     def layer1_encrypt(self, values):
         n = len(values); shift = n % 26
         return [((v + shift) % 255 + i * shift) % 255 for i, v in enumerate(values)]
@@ -20,9 +18,7 @@ class NetrunnerCipher:
         return self.layer3_encrypt(self.layer2_encrypt(self.layer1_encrypt(list(data))))
     def decrypt_bytes(self, data):
         return bytes(self.layer1_decrypt(self.layer2_decrypt(self.layer3_decrypt(data))))
-# ── MODULE API ────────────────────────────────────────────────────────────────
+
 _NR = NetrunnerCipher()
-def encrypt(data: bytes, key: str, **kw) -> bytes:
-    return _NR.encrypt_bytes(data)
-def decrypt(data: bytes, key: str, **kw) -> bytes:
-    return _NR.decrypt_bytes(data)
+def encrypt(data: bytes, key: str, **kw) -> bytes: return _NR.encrypt_bytes(data)
+def decrypt(data: bytes, key: str, **kw) -> bytes: return _NR.decrypt_bytes(data)

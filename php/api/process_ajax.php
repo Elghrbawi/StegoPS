@@ -17,19 +17,29 @@ function readUpload(string $key, string &$err): ?string {
     return $d;
 }
 
-function filePayload(string $key, string &$err): ?string {
-    $bin = readUpload($key, $err); if ($bin === null) return null;
-    $meta = json_encode(['name'=>$_FILES[$key]['name']??'payload.bin','type'=>$_FILES[$key]['type']??'application/octet-stream'], JSON_UNESCAPED_SLASHES);
-    return base64_encode("STEGFILE1\n{$meta}\n\n{$bin}");
-}
-
-function imagePayload(string $key, string &$err): ?string {
-    $allowed = ['image/png','image/jpeg','image/bmp','image/gif','image/webp'];
-    $mime = @mime_content_type($_FILES[$key]['tmp_name'] ?? '') ?: ($_FILES[$key]['type'] ?? '');
-    if (!in_array($mime, $allowed, true)) { $err = 'Payload image must be PNG/JPEG/BMP/GIF/WebP.'; return null; }
-    $bin = readUpload($key, $err); if ($bin === null) return null;
-    $meta = json_encode(['name'=>$_FILES[$key]['name']??'payload.png','type'=>$mime], JSON_UNESCAPED_SLASHES);
-    return base64_encode("STEGIMAGE1\n{$meta}\n\n{$bin}");
+/**
+ * mediaPayload — handles ANY binary payload: images, audio, video, documents.
+ * Previously split into filePayload/imagePayload — now unified as 'media'.
+ * The stored format is base64("STEGMEDIA1\n{json_meta}\n\n{binary}") so the
+ * extractor can reconstruct the original file with correct name & MIME type.
+ */
+function mediaPayload(string $key, string &$err): ?string {
+    if (empty($_FILES[$key]['name']) || $_FILES[$key]['error'] !== UPLOAD_ERR_OK) {
+        $err = 'No media file uploaded or upload error.'; return null;
+    }
+    $maxBytes = 50 * 1024 * 1024; // 50 MB payload limit
+    if ($_FILES[$key]['size'] > $maxBytes) {
+        $err = 'Payload media file too large. Max 50 MB.'; return null;
+    }
+    $bin = file_get_contents($_FILES[$key]['tmp_name']);
+    if ($bin === false) { $err = 'Failed to read payload file.'; return null; }
+    $mime = @mime_content_type($_FILES[$key]['tmp_name']) ?: ($_FILES[$key]['type'] ?? 'application/octet-stream');
+    $meta = json_encode([
+        'name' => $_FILES[$key]['name'] ?? 'payload.bin',
+        'type' => $mime,
+        'size' => strlen($bin),
+    ], JSON_UNESCAPED_SLASHES);
+    return base64_encode("STEGMEDIA1\n{$meta}\n\n{$bin}");
 }
 
 function resolveCarrier(StegoHandler $h, int $uid, string &$err): ?array {
@@ -73,7 +83,7 @@ try {
 
     if ($action === 'ping') { echo json_encode($handler->pingEngine()); exit; }
 
-    /* get_methods — carrier type + payload type aware */
+    /* get_methods */
     if ($action === 'get_methods') {
         echo json_encode($handler->getMethodsRaw(
             $_POST['file_type']    ?? 'image',
@@ -82,31 +92,51 @@ try {
         exit;
     }
 
+    /* capacity — returns how many bytes can be hidden */
+    if ($action === 'capacity') {
+        echo json_encode($handler->getCapacity(
+            (int)($_POST['carrier_file_id'] ?? 0), $uid,
+            $_POST['steg_method'] ?? 'lsb',
+            $_POST['cover_text']  ?? ''
+        ));
+        exit;
+    }
+
     /* embed */
     if ($action === 'embed') {
-        $stegoKey = trim($_POST['stego_key']  ?? '');
-        $pType    = $_POST['payload_type']     ?? 'text';
-        $stegMeth = $_POST['steg_method']      ?? 'lsb';
+        $stegoKey = trim($_POST['stego_key']   ?? '');
+        $pType    = $_POST['payload_type']      ?? 'text';
+        $stegMeth = $_POST['steg_method']       ?? 'lsb';
         $chainRaw = json_decode($_POST['chain_data'] ?? '[]', true) ?: [];
         $errMsg   = '';
 
         if (empty($stegoKey)) { echo json_encode(['success'=>false,'message'=>'Stego key is required.']); exit; }
 
+        // ── Payload type resolution ─────────────────────────────────────────
+        // Supported: 'text', 'media' (any binary file — images, audio, video, docs)
+        // 'image' and 'file' are accepted as aliases for 'media' for back-compat.
         switch ($pType) {
+            case 'media':
             case 'file':
-                $payload = filePayload('payload_file', $errMsg);
+            case 'image':   // legacy alias — images ARE media
+                $payload = mediaPayload('payload_media', $errMsg);
+                if ($payload === null) {
+                    // Try legacy key names
+                    if (!empty($_FILES['payload_file']['name']))   $payload = mediaPayload('payload_file', $errMsg);
+                    elseif (!empty($_FILES['payload_image']['name'])) $payload = mediaPayload('payload_image', $errMsg);
+                }
+                $pType = 'media'; // normalise
                 break;
-            case 'image':
-                $payload = imagePayload('payload_image', $errMsg);
-                break;
-            case 'zero_width':
-                // ZW text-in-text — remap to text payload + zero_width method
-                $pType    = 'text';
-                $stegMeth = 'zero_width';
-                $payload  = $_POST['payload_text'] ?? '';
-                if (trim($payload) === '') $errMsg = 'Message text is required for Zero-Width steg.';
-                break;
-            default: // text
+
+            case 'text_steg': // text-in-text — handled by /api/text/embed
+                $coverText = $_POST['cover_text'] ?? '';
+                $payload   = $_POST['payload_text'] ?? '';
+                if (trim($coverText) === '') { echo json_encode(['success'=>false,'message'=>'Cover text is required for text steg.']); exit; }
+                if (trim($payload)   === '') { echo json_encode(['success'=>false,'message'=>'Payload text cannot be empty.']); exit; }
+                echo json_encode($handler->embedText($uid, $coverText, $payload, $stegoKey, $stegMeth, $chainRaw));
+                exit;
+
+            default: // 'text'
                 $payload = $_POST['payload_text'] ?? '';
                 if (trim($payload) === '') $errMsg = 'Payload text cannot be empty.';
         }
@@ -139,6 +169,14 @@ try {
         $errMsg   = '';
 
         if (empty($stegoKey)) { echo json_encode(['success'=>false,'message'=>'Stego key is required.']); exit; }
+
+        // Text extraction — stego_text in POST body
+        if (in_array($stegMeth, ['zwsp','homoglyph','unicode_tag','whitespace','combining'], true)) {
+            $stegoText = $_POST['stego_text'] ?? '';
+            if (!$stegoText) { echo json_encode(['success'=>false,'message'=>'stego_text is required for text steg.']); exit; }
+            echo json_encode($handler->extractText($uid, $stegoText, $stegoKey, $stegMeth, $chainRaw));
+            exit;
+        }
 
         $stego = resolveStego($handler, $uid, $errMsg);
         if (!$stego) { echo json_encode(['success'=>false,'message'=>$errMsg]); exit; }

@@ -2,56 +2,111 @@
 $pageTitle='Secure Sharing';$activePage='share';
 require_once 'php/includes/header.php';
 require_once 'php/includes/stego_handler.php';
-$handler=new StegoHandler();$db=Database::getInstance();$isGuest=$auth->isGuest();
+$handler=new StegoHandler();$db=Database::getInstance();
+$auth2=new Auth();$isGuest=$auth2->isGuest();
+
 $shareToken=trim($_GET['t']??'');
 $error=$success=$shareUrl='';$sharedView=null;$pwRequired=$pwError=false;
-if($shareToken){
-  $sharedView=$db->fetchOne(
+
+// ── STREAM / DOWNLOAD HANDLER ──────────────────────────────────────────────
+// ?dl=1 → download with Content-Disposition: attachment
+// ?stream=1 → serve inline (audio/image browser preview)
+$wantDl     = ($_GET['dl']     ?? '') === '1';
+$wantStream = ($_GET['stream'] ?? '') === '1';
+
+if ($shareToken && ($wantDl || $wantStream)) {
+  $sv = $db->fetchOne(
+    "SELECT sf.*,o.output_file_id,sf.password_hash AS pw_hash
+     FROM shared_files sf JOIN stego_operations o ON sf.op_id=o.op_id
+     WHERE sf.share_token=? AND sf.is_active=1", [$shareToken]);
+  if ($sv) {
+    // Check expiry & download cap without full page render
+    $expired = $sv['expires_at'] && strtotime($sv['expires_at']) < time();
+    $capped  = $sv['max_downloads'] > 0 && $sv['download_count'] >= $sv['max_downloads'];
+    $locked  = $sv['pw_hash'] && !isset($_SESSION['share_unlocked_'.$shareToken]);
+    if (!$expired && !$capped && !$locked) {
+      $frow = $db->fetchOne(
+        "SELECT storage_path,original_filename,mime_type FROM media_files WHERE file_id=?",
+        [$sv['output_file_id'] ?? 0]);
+      if ($frow) {
+        $rp = UPLOAD_PATH . str_replace('/', DIRECTORY_SEPARATOR, $frow['storage_path']);
+        if (file_exists($rp)) {
+          if ($wantDl) $db->query("UPDATE shared_files SET download_count=download_count+1 WHERE share_token=?", [$shareToken]);
+          $mime = $frow['mime_type'] ?? 'application/octet-stream';
+          header('Content-Type: ' . $mime);
+          header('Content-Length: ' . filesize($rp));
+          header('Cache-Control: no-store');
+          if ($wantDl) header('Content-Disposition: attachment; filename="'.addslashes($frow['original_filename']??'stego_output').'"');
+          else          header('Content-Disposition: inline; filename="'.addslashes($frow['original_filename']??'stego_output').'"');
+          ob_clean(); flush(); readfile($rp); exit;
+        }
+      }
+    }
+  }
+  header('HTTP/1.1 404 Not Found'); exit('File not available.');
+}
+
+// ── SHARE VIEW LOOKUP ────────────────────────────────────────────────────────
+if ($shareToken) {
+  $sharedView = $db->fetchOne(
     "SELECT sf.*,o.stego_technique,o.payload_type,o.payload_size,o.created_at AS op_created,
      cf.original_filename AS carrier_name,cf.file_size_bytes AS carrier_size,cf.file_type AS media_type,
      of2.original_filename AS output_name,of2.file_size_bytes AS output_size,of2.file_id AS output_file_id,
      of2.mime_type AS output_mime,u.username AS shared_by_name
      FROM shared_files sf
-     JOIN stego_operations o ON sf.op_id=o.op_id
-     JOIN media_files cf ON cf.file_id=o.carrier_file_id
+     JOIN stego_operations o  ON sf.op_id=o.op_id
+     JOIN media_files cf      ON cf.file_id=o.carrier_file_id
      LEFT JOIN media_files of2 ON of2.file_id=o.output_file_id
-     JOIN users u ON sf.shared_by=u.user_id
-     WHERE sf.share_token=? AND sf.is_active=1",[$shareToken]);
-  if($sharedView){
-    if($sharedView['expires_at']&&strtotime($sharedView['expires_at'])<time()){$sharedView=null;$error='This share link has expired.';}
-    elseif($sharedView['max_downloads']>0&&$sharedView['download_count']>=$sharedView['max_downloads']){$sharedView=null;$error='Download limit reached.';}
-    elseif($sharedView['password_hash']){
-      if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_POST['share_password'])){
-        if(password_verify($_POST['share_password'],$sharedView['password_hash']))$_SESSION['share_unlocked_'.$shareToken]=true;
-        else{$pwError=true;$sharedView=null;}
+     JOIN users u             ON sf.shared_by=u.user_id
+     WHERE sf.share_token=? AND sf.is_active=1", [$shareToken]);
+
+  if ($sharedView) {
+    if ($sharedView['expires_at'] && strtotime($sharedView['expires_at']) < time()) {
+      $sharedView=null; $error='This share link has expired.';
+    } elseif ($sharedView['max_downloads'] > 0 && $sharedView['download_count'] >= $sharedView['max_downloads']) {
+      $sharedView=null; $error='Download limit reached.';
+    } elseif ($sharedView['password_hash']) {
+      if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['share_password'])) {
+        if (password_verify($_POST['share_password'], $sharedView['password_hash']))
+          $_SESSION['share_unlocked_'.$shareToken] = true;
+        else { $pwError=true; $sharedView=null; }
       }
-      if(!isset($_SESSION['share_unlocked_'.$shareToken])&&!$pwError){$pwRequired=true;$sharedView=null;}
+      if (!isset($_SESSION['share_unlocked_'.$shareToken]) && !$pwError) {
+        $pwRequired=true; $sharedView=null;
+      }
     }
-  } elseif(!$error){$error='Share link not found or no longer active.';}
-  if($sharedView&&($_GET['dl']??'')==='1'){
-    $frow=$db->fetchOne("SELECT storage_path,original_filename,mime_type FROM media_files WHERE file_id=?",[$sharedView['output_file_id']??0]);
-    if($frow){$rp=UPLOAD_PATH.str_replace('/',DIRECTORY_SEPARATOR,$frow['storage_path']);
-      if(file_exists($rp)){$db->query("UPDATE shared_files SET download_count=download_count+1 WHERE share_token=?",[$shareToken]);
-        header('Content-Type:'.($frow['mime_type']??'application/octet-stream'));
-        header('Content-Disposition: attachment; filename="'.addslashes($frow['original_filename']??'stego_output').'"');
-        header('Content-Length:'.filesize($rp));header('Cache-Control: no-store');ob_clean();readfile($rp);exit;}}
-    $error='Output file not found on server.';
+  } elseif (!$error) {
+    $error='Share link not found or no longer active.';
   }
 }
-if(!$shareToken&&!$isGuest&&$_SERVER['REQUEST_METHOD']==='POST'){
-  $res=$handler->createShareLink((int)($_POST['op_id']??0),$user['user_id'],!empty($_POST['password'])?$_POST['password']:null,(int)($_POST['max_downloads']??0),!empty($_POST['expires_at'])?$_POST['expires_at']:null,$_POST['chain_hint']??'');
-  $res['success']?[$success,$shareUrl]=['Share link created!',$res['url']]:($error=$res['message']);
+
+// ── CREATE SHARE (logged-in users) ──────────────────────────────────────────
+if (!$shareToken && !$isGuest && $_SERVER['REQUEST_METHOD']==='POST') {
+  $res = $handler->createShareLink(
+    (int)($_POST['op_id']??0), $auth2->currentUser()['user_id'],
+    !empty($_POST['password']) ? $_POST['password'] : null,
+    (int)($_POST['max_downloads']??0),
+    !empty($_POST['expires_at']) ? $_POST['expires_at'] : null,
+    $_POST['chain_hint']??''
+  );
+  $res['success']
+    ? [$success,$shareUrl] = ['Share link created!', $res['url']]
+    : ($error = $res['message']);
 }
+
 $ops=$shares=[];$preOp=0;$opDetails=null;
-if(!$isGuest){
-  $uid=$user['user_id'];$preOp=(int)($_GET['op']??0);
+if (!$isGuest) {
+  $uid=$auth2->currentUser()['user_id']; $preOp=(int)($_GET['op']??0);
   $ops=$db->fetchAll("SELECT o.op_id,f.original_filename,o.created_at,o.stego_technique FROM stego_operations o JOIN media_files f ON o.carrier_file_id=f.file_id WHERE o.user_id=? AND o.status='completed' ORDER BY o.created_at DESC LIMIT 50",[$uid]);
   $shares=$db->fetchAll("SELECT sf.*,f.original_filename FROM shared_files sf JOIN stego_operations o ON sf.op_id=o.op_id JOIN media_files f ON o.carrier_file_id=f.file_id WHERE o.user_id=? AND sf.is_active=1 ORDER BY sf.created_at DESC",[$uid]);
   if($preOp>0)$opDetails=$db->fetchOne("SELECT o.*,cf.original_filename AS before_name,cf.file_size_bytes AS before_size,cf.file_type AS media_type,cf.mime_type AS carrier_mime,of2.original_filename AS after_name,of2.file_size_bytes AS after_size,of2.file_id AS output_file_id,of2.mime_type AS output_mime FROM stego_operations o JOIN media_files cf ON cf.file_id=o.carrier_file_id LEFT JOIN media_files of2 ON of2.file_id=o.output_file_id WHERE o.op_id=? AND o.user_id=?",[$preOp,$uid]);
 }
+
 function ss(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return round($b/1024,1).' KB';return round($b/1048576,2).' MB';}
 function sd(string $dt):string{return date('d M Y H:i',strtotime($dt));}
 function mtype(string $mt):string{return match($mt){'image'=>'&#128444;','audio'=>'&#127925;','video'=>'&#127916;',default=>'&#128196;'};}
+// Build short display URL — shows /s.php?t=TOKEN which resolves same as share.php
+function shortUrl(string $token):string{return SITE_URL.'/s.php?t='.urlencode($token);}
 ?>
 <style>
 .share-view{max-width:560px;margin:0 auto}
@@ -82,7 +137,7 @@ function mtype(string $mt):string{return match($mt){'image'=>'&#128444;','audio'
 @media(max-width:640px){.ops-grid{grid-template-columns:1fr}.share-meta-grid{grid-template-columns:1fr}}
 .share-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px;flex-wrap:wrap}
 .share-row:last-child{border-bottom:none}
-.share-row-token{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--accent);cursor:pointer;flex:0 0 auto}
+.share-row-token{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--accent);cursor:pointer;flex:0 0 auto;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .share-row-file{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim);font-family:'Space Mono',monospace;font-size:9px}
 .share-row-dl,.share-row-exp{color:var(--text-muted);font-family:'Space Mono',monospace;font-size:9px;white-space:nowrap}
 .share-row-btns{display:flex;gap:4px;flex-shrink:0}
@@ -100,6 +155,7 @@ function mtype(string $mt):string{return match($mt){'image'=>'&#128444;','audio'
 .op-preview-val{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text)}
 .op-preview-sub{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:2px}
 .chain-hint-display{font-family:'JetBrains Mono',monospace;font-size:10px;background:rgba(0,0,0,.2);border:1px solid rgba(0,229,200,.15);border-radius:6px;padding:8px 10px;color:var(--accent);margin-top:8px;display:flex;align-items:center;gap:6px}
+.short-url-badge{display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.2);border-radius:6px;padding:4px 8px;color:#a78bfa;margin-top:4px}
 </style>
 
 <?php if($error):?><div class="alert alert-error"><?=htmlspecialchars($error)?></div><?php endif;?>
@@ -122,26 +178,36 @@ function mtype(string $mt):string{return match($mt){'image'=>'&#128444;','audio'
 </div>
 
 <?php elseif($sharedView):?>
+<?php
+$outputMime = (string)($sharedView['output_mime'] ?? '');
+$isImg      = str_starts_with($outputMime, 'image/');
+$isAudio    = str_starts_with($outputMime, 'audio/');
+$streamUrl  = SITE_URL.'/share.php?t='.urlencode($shareToken).'&stream=1';
+$dlUrl      = SITE_URL.'/share.php?t='.urlencode($shareToken).'&dl=1';
+$displayUrl = shortUrl($shareToken);
+?>
 <div class="share-view">
   <div class="share-hero">
     <div class="share-hero-icon"><?=mtype((string)$sharedView['media_type'])?></div>
     <div class="share-hero-title">Shared Stego File</div>
     <div class="share-hero-by">shared by <?=htmlspecialchars($sharedView['shared_by_name'])?> &bull; <?=sd($sharedView['op_created'])?></div>
   </div>
-  <?php
-  $outputMime=(string)($sharedView['output_mime']??'');
-  $isImg=str_starts_with($outputMime,'image/');
-  $isAudio=str_starts_with($outputMime,'audio/');
-  $dlUrl=SITE_URL.'/share.php?t='.urlencode($shareToken).'&dl=1';
-  if($isImg||$isAudio):?>
+
+  <?php if($isImg||$isAudio):?>
   <div class="share-preview-box">
     <?php if($isImg):?>
-    <img src="<?=$dlUrl?>" class="share-preview-img" alt="Stego output preview" id="preview-img" loading="lazy">
+    <img src="<?=$streamUrl?>" class="share-preview-img" alt="Stego output preview" id="preview-img" loading="lazy">
     <?php elseif($isAudio):?>
-    <div class="share-preview-audio"><audio controls style="width:100%"><source src="<?=$dlUrl?>" type="<?=htmlspecialchars($outputMime)?>">Your browser does not support audio.</audio></div>
+    <div class="share-preview-audio">
+      <audio controls style="width:100%" preload="metadata">
+        <source src="<?=$streamUrl?>" type="<?=htmlspecialchars($outputMime)?>">
+        Your browser does not support audio.
+      </audio>
+    </div>
     <?php endif;?>
   </div>
   <?php endif;?>
+
   <div class="share-preview-box" style="margin-bottom:16px">
     <div class="share-meta-grid">
       <div class="share-meta-cell"><div class="share-meta-label">Output File</div><div class="share-meta-value"><?=htmlspecialchars($sharedView['output_name']??'stego_output')?></div></div>
@@ -150,24 +216,29 @@ function mtype(string $mt):string{return match($mt){'image'=>'&#128444;','audio'
       <div class="share-meta-cell"><div class="share-meta-label">Technique</div><div class="share-meta-value"><span class="share-badge"><?=strtoupper(str_replace('_',' ',(string)$sharedView['stego_technique']))?></span></div></div>
       <div class="share-meta-cell"><div class="share-meta-label">Payload</div><div class="share-meta-value"><?=ss((int)$sharedView['payload_size'])?> &bull; <?=strtoupper((string)$sharedView['payload_type'])?></div></div>
       <div class="share-meta-cell"><div class="share-meta-label">Output Size</div><div class="share-meta-value"><?=ss((int)$sharedView['output_size'])?></div></div>
-      <div class="share-meta-cell"><div class="share-meta-label">Downloads</div><div class="share-meta-value"><?=(int)$sharedView['download_count']?><?=$sharedView['max_downloads']?' / '.(int)$sharedView['max_downloads']:'/?>'</div></div>
+      <div class="share-meta-cell"><div class="share-meta-label">Downloads</div><div class="share-meta-value"><?=(int)$sharedView['download_count']?><?=$sharedView['max_downloads']?' / '.(int)$sharedView['max_downloads']:' / &infin;'?></div></div>
       <?php if($sharedView['expires_at']):?><div class="share-meta-cell"><div class="share-meta-label">Expires</div><div class="share-meta-value"><?=sd($sharedView['expires_at'])?></div></div><?php endif;?>
     </div>
   </div>
+
   <?php if($sharedView['chain_hint']):?>
   <div class="chain-hint-display">&#9939; Chain hint: <strong><?=htmlspecialchars($sharedView['chain_hint'])?></strong></div>
   <?php endif;?>
+
   <a href="<?=$dlUrl?>" class="share-dl-btn" id="dl-btn">&#11015; Download Stego File</a>
+
   <div style="margin-bottom:16px">
     <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Share This Link</div>
     <div class="copy-row">
-      <input type="text" class="copy-input" id="surl" value="<?=htmlspecialchars(SITE_URL.'/share.php?t='.$shareToken)?>" readonly onclick="this.select()">
-      <button class="copy-btn" id="scb" onclick="cpUrl('<?=htmlspecialchars(SITE_URL.'/share.php?t='.$shareToken,ENT_QUOTES)?>','scb')">&#11014; Copy</button>
+      <input type="text" class="copy-input" id="surl" value="<?=htmlspecialchars($displayUrl)?>" readonly onclick="this.select()">
+      <button class="copy-btn" id="scb" onclick="cpUrl('<?=htmlspecialchars($displayUrl,ENT_QUOTES)?>','scb')">&#11014; Copy</button>
     </div>
   </div>
+
   <div style="text-align:center">
     <a href="<?=SITE_URL?>/extract.php" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--accent)">&#128274; Extract payload from this file &rarr;</a>
   </div>
+
   <?php if($isGuest):?>
   <div class="guest-strip">&#9888; Viewing as Guest &mdash; register to create and manage your own links.<a href="<?=SITE_URL?>/register.php">Create Account &rarr;</a></div>
   <?php endif;?>
@@ -208,7 +279,8 @@ function mtype(string $mt):string{return match($mt){'image'=>'&#128444;','audio'
 <?php if($shareUrl):?>
 <div class="card" style="margin-bottom:16px;border-color:rgba(0,229,200,.3)">
   <div class="card-title" style="color:var(--accent)">&#10003; Share Link Created</div>
-  <div class="copy-row" style="margin-bottom:10px">
+  <?php $shortDisplay=shortUrl(basename(parse_url($shareUrl,PHP_URL_QUERY)?:''))?:$shareUrl;?>
+  <div class="copy-row" style="margin-bottom:6px">
     <input type="text" class="copy-input" id="new-share-url" value="<?=htmlspecialchars($shareUrl)?>" readonly onclick="this.select()">
     <button class="copy-btn" id="nsub" onclick="cpUrl('<?=htmlspecialchars($shareUrl,ENT_QUOTES)?>','nsub')">&#11014; Copy</button>
   </div>
@@ -262,9 +334,9 @@ function mtype(string $mt):string{return match($mt){'image'=>'&#128444;','audio'
   <p style="color:var(--text-muted);font-family:'Space Mono',monospace;font-size:11px;text-align:center;padding:20px 0">No active links</p>
   <?php else:?>
   <div id="shares-list">
-    <?php foreach($shares as $s):$surl=SITE_URL.'/share.php?t='.$s['share_token'];?>
+    <?php foreach($shares as $s):$surl=shortUrl($s['share_token']);?>
     <div class="share-row" id="srow-<?=$s['share_id']?>">
-      <span class="share-row-token" title="<?=htmlspecialchars($surl)?>" onclick="cpUrl('<?=htmlspecialchars($surl,ENT_QUOTES)?>','stok-<?=$s['share_id']?>')" id="stok-<?=$s['share_id']?>"><?=substr($s['share_token'],0,14)?>&hellip;</span>
+      <span class="share-row-token" title="<?=htmlspecialchars($surl)?>" onclick="cpUrl('<?=htmlspecialchars($surl,ENT_QUOTES)?>','stok-<?=$s['share_id']?>')" id="stok-<?=$s['share_id']?>"><?=htmlspecialchars($s['share_token'])?></span>
       <span class="share-row-file" title="<?=htmlspecialchars($s['original_filename'])?>"><?=htmlspecialchars(substr($s['original_filename'],0,16))?></span>
       <span class="share-row-dl"><?=$s['download_count']?>/<?=$s['max_downloads']?:'&infin;'?></span>
       <span class="share-row-exp"><?=$s['expires_at']?date('d M',strtotime($s['expires_at'])):'Never'?></span>
@@ -293,9 +365,9 @@ function cpUrl(url,btnId){
 }
 function revokeShare(id,rowId){
   if(!confirm('Revoke this share link? Recipients will lose access.'))return;
-  const fd=new FormData();fd.append('share_id',id);
-  fetch(`${SITE_URL}/php/api/revoke.php`,{method:'POST',body:fd}).then(r=>r.json())
-    .then(d=>{if(d.success){document.getElementById(rowId)?.remove();typeof showToast==='function'&&showToast('Share link revoked.');}else alert(d.message||'Failed to revoke.');})
+  const fd=new FormData();fd.append('share_id',id);fd.append('action','revoke_share');
+  fetch(`${SITE_URL}/php/api/process_ajax.php`,{method:'POST',body:fd}).then(r=>r.json())
+    .then(d=>{if(d.success){document.getElementById(rowId)?.remove();typeof showToast==='function'&&showToast('Share link revoked.');}else alert(d.message||'Failed to revoke.')})
     .catch(()=>window.location.reload());
 }
 const previewImg=document.getElementById('preview-img');
