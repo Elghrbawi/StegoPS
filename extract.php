@@ -40,6 +40,8 @@ function fmtSzEx(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return r
 .steg-method-loading,.steg-method-placeholder{font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);padding:10px 0;display:flex;align-items:center;gap:8px}
 .steg-method-placeholder{justify-content:center;border:1px dashed var(--border);border-radius:7px;color:var(--text-dim);opacity:.7}
 .sml-spinner{width:12px;height:12px;border:2px solid var(--border);border-top-color:#c084fc;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+.upload-zone{transition:border-color .15s,background .15s,transform .15s}
+.upload-zone.drag-over{border-color:#c084fc!important;background:rgba(192,132,252,.13)!important;transform:scale(1.015)}
 .pre-file-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(192,132,252,.06);border:1px solid rgba(192,132,252,.2);border-radius:8px;margin-bottom:10px;font-family:'Space Mono',monospace;font-size:10px;color:#c084fc}
 .pre-file-banner .pfb-icon{font-size:16px;flex-shrink:0}
 .pre-file-banner .pfb-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
@@ -65,7 +67,7 @@ function fmtSzEx(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return r
           <span class="pfb-icon">&#9673;</span>
           <span class="pfb-name"><?=htmlspecialchars($preFile['original_filename'])?></span>
           <span class="pfb-size"><?=fmtSzEx((int)$preFile['file_size_bytes'])?></span>
-          <?php if($preOp):?><span class="pfb-op"><?=strtoupper((string)$preOp['stego_technique'])?></span><?php endif;?>
+          <?php if($preOp):?><span class="pfb-op"><?=strtoupper((string)$preOp['stego_technique'])?></span><?php endif?>
           <button class="pfb-clear" onclick="clearPreFile()" title="Clear">&#10005;</button>
         </div>
         <input type="hidden" id="pre-stego-file-id" value="<?=$preFileId?>">
@@ -73,11 +75,11 @@ function fmtSzEx(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return r
         <div style="display:none" id="stego-upload-row">
       <?php else:?>
         <div class="carrier-upload-row" id="stego-upload-row">
-      <?php endif;?>
+      <?php endif?>
           <div class="upload-zone carrier-drop-zone" onclick="document.getElementById('stego-input').click()">
             <div class="upload-icon">&#9673;</div>
             <div class="upload-text">Click or drag stego file</div>
-            <div class="upload-sub">PNG / JPG / WAV / MP4 — file with hidden payload</div>
+            <div class="upload-sub">PNG / JPG / WAV / MP4 &mdash; file with hidden payload</div>
           </div>
           <div id="stego-preview" class="carrier-preview-panel" style="display:none"></div>
         </div>
@@ -119,11 +121,11 @@ function fmtSzEx(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return r
               <option value="">-- Select a saved chain --</option>
               <?php foreach($chainsWithSteps as $c):?>
                 <option value="<?=addslashes($chainKeysMap[$c['chain_id']]??'')?>"><?=htmlspecialchars($c['chain_name'])?> (<?=$c['layer_count']?> layers)</option>
-              <?php endforeach;?>
+              <?php endforeach?>
             </select>
           </div>
         </div>
-      <?php endif;?>
+      <?php endif?>
       <div class="input-group" style="margin-bottom:12px">
         <label class="input-label">Paste Chain Key <span class="optional-tag">(auto-loads chain)</span></label>
         <div class="input-wrap">
@@ -137,7 +139,7 @@ function fmtSzEx(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return r
           <div class="algo-chip <?=$cat?><?=$a['algo_slug']==='netrunner'?' netrunner-chip':''?>" onclick="addToChain('<?=addslashes($a['algo_name'])?>','<?=$cat?>','<?=$a['algo_slug']?>')">
             <?=htmlspecialchars($a['algo_name'])?> <span class="chip-plus">+</span>
           </div>
-        <?php endforeach;endforeach;?>
+        <?php endforeach;endforeach?>
         <a href="<?=SITE_URL?>/chains.php" class="algo-chip-more">All &rarr;</a>
       </div>
       <div class="pipeline-status-bar">
@@ -208,6 +210,7 @@ const EXTRACT_METHODS={
   audio:[
     {slug:'wav_lsb',name:'WAV LSB',desc:'Recover payload from audio PCM sample LSBs'},
     {slug:'phase',name:'Phase Coding',desc:'Recover payload from DFT phase segments'},
+    {slug:'aahe',name:'AAHE',desc:'Adaptive audio hiding engine — keyed XOR + psychoacoustic masking',special:true,badge:'special'},
   ],
   video:[
     {slug:'frame_lsb',name:'Frame LSB',desc:'Recover payload from per-frame LSB data'},
@@ -217,29 +220,24 @@ function renderExtractMethods(methods,preMethod){
   const c=document.getElementById('extract-method-cards');if(!c||!methods.length)return;
   c.innerHTML='';
   methods.forEach((m,i)=>{
-    const isSelected=preMethod?m.slug===preMethod:(i===0);
-    const isSpec=m.special||false;
+    const sel=preMethod?m.slug===preMethod:(i===0);
     const badge=m.badge?`<span class="smc-badge ${m.badge}">${m.badge==='dct'?'DCT':'NEW'}</span>`:'';
     const card=document.createElement('label');
-    card.className='steg-method-card'+(isSelected?' selected':'')+(isSpec?' special-method':'');
-    card.innerHTML=`<input type="radio" name="extract_method_radio" value="${m.slug}" ${isSelected?'checked':''}><div class="smc-indicator"></div><div class="smc-body"><div class="smc-name">${m.name}${badge}</div><div class="smc-desc">${m.desc||''}</div></div>`;
+    card.className='steg-method-card'+(sel?' selected':'')+(m.special?' special-method':'');
+    card.innerHTML=`<input type="radio" name="extract_method_radio" value="${m.slug}" ${sel?'checked':''}><div class="smc-indicator"></div><div class="smc-body"><div class="smc-name">${m.name}${badge}</div><div class="smc-desc">${m.desc||''}</div></div>`;
     card.addEventListener('click',()=>{
       document.querySelectorAll('#extract-method-cards .steg-method-card').forEach(x=>x.classList.remove('selected'));
       card.classList.add('selected');_extractSelectedMethod=m.slug;
       const inp=document.getElementById('extract-steg-method-input');if(inp)inp.value=m.slug;
     });
-    if(isSelected){_extractSelectedMethod=m.slug;const inp=document.getElementById('extract-steg-method-input');if(inp)inp.value=m.slug;}
+    if(sel){_extractSelectedMethod=m.slug;const inp=document.getElementById('extract-steg-method-input');if(inp)inp.value=m.slug;}
     c.appendChild(card);
   });
 }
 function onStegoFileSelected(input){
   const file=input?.files?.[0];if(!file)return;
-  let type='image';
-  if(file.type.startsWith('audio/'))type='audio';
-  else if(file.type.startsWith('video/'))type='video';
-  _extractFileType=type;
-  const methods=EXTRACT_METHODS[type]||EXTRACT_METHODS.image;
-  renderExtractMethods(methods,null);
+  _extractFileType=file.type.startsWith('audio/')?'audio':file.type.startsWith('video/')?'video':'image';
+  renderExtractMethods(EXTRACT_METHODS[_extractFileType]||EXTRACT_METHODS.image,null);
 }
 function clearPreFile(){
   document.getElementById('pre-file-banner')?.remove();
@@ -317,7 +315,6 @@ function runExtract(){
   showTerminal('extract-terminal');
   const tb=document.getElementById('extract-term-body');
   document.getElementById('payload-reveal').style.display='none';
-  const hasCrypto=chain.some(s=>['symmetric','asymmetric','classical'].includes(s.category));
   const steps=[
     'Initializing decryption session\u2026',
     'Loading stego file: '+(stegoFile?.name||'pre-loaded #'+preFileId),
@@ -325,7 +322,7 @@ function runExtract(){
     'Locating hidden payload region\u2026',
     chain.length>0?('Reversing chain \u2014 '+chain.length+' layer'+(chain.length>1?'s':'')+'\u2026'):('No chain \u2014 expecting raw payload\u2026'),
     ...chain.slice().reverse().map((s,i)=>'  Layer '+(i+1)+' (rev): '+s.name),
-    ...(hasCrypto?['Decrypting data\u2026']:['Extracting bytes from carrier\u2026']),
+    ...(chain.some(s=>['symmetric','asymmetric','classical'].includes(s.category))?['Decrypting data\u2026']:['Extracting bytes from carrier\u2026']),
   ];
   animateTerminal(tb,steps,()=>{
     const fd=new FormData();
@@ -333,7 +330,7 @@ function runExtract(){
     fd.append('chain_data',JSON.stringify(chain));fd.append('steg_method',stegMethod);
     if(preFileId)fd.append('stego_file_id',preFileId);else fd.append('stego_file',stegoFile);
     fetch(EXTRACT_URL,{method:'POST',body:fd})
-      .then(r=>{const ct=r.headers.get('content-type')||'';if(!ct.includes('json'))return r.text().then(t=>{throw new Error('Server error ('+r.status+'): '+t.substring(0,120));});return r.json();})
+      .then(r=>{if(!r.headers.get('content-type')?.includes('json'))return r.text().then(t=>{throw new Error('Server error ('+r.status+'): '+t.substring(0,120));});return r.json();})
       .then(d=>{
         setLoading(btn,false);
         if(d.success){
@@ -348,10 +345,23 @@ function runExtract(){
       .catch(e=>{setLoading(btn,false);if(btn._flashErr)btn._flashErr();addTermLine(tb,'err','\u2717 Network error: '+e.message);showStegError('Network error: '+e.message);});
   });
 }
+function initDrop(zone,input,cb){
+  if(!zone||!input)return;
+  ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();e.dataTransfer&&(e.dataTransfer.dropEffect='copy');zone.classList.add('drag-over');}));
+  ['dragleave','dragend'].forEach(ev=>zone.addEventListener(ev,e=>{if(ev==='dragleave'&&zone.contains(e.relatedTarget))return;zone.classList.remove('drag-over');}));
+  zone.addEventListener('drop',e=>{
+    e.preventDefault();e.stopPropagation();zone.classList.remove('drag-over');
+    const f=e.dataTransfer.files[0];if(!f)return;
+    try{const dt=new DataTransfer();dt.items.add(f);input.files=dt.files;}catch(ex){}
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    if(cb)cb(f);
+  });
+}
 window.addEventListener('DOMContentLoaded',()=>{
   restoreExtract();renderChain();
   const preType=document.getElementById('pre-stego-type')?.value;
-  if(preType){const methods=EXTRACT_METHODS[preType]||EXTRACT_METHODS.image;renderExtractMethods(methods,document.getElementById('extract-steg-method-input')?.value||null);}
+  if(preType&&EXTRACT_METHODS[preType])renderExtractMethods(EXTRACT_METHODS[preType],document.getElementById('extract-steg-method-input')?.value||null);
+  initDrop(document.querySelector('#stego-upload-row .upload-zone'),document.getElementById('stego-input'),null);
 });
 </script>
 <?php require_once 'php/includes/footer.php';?>

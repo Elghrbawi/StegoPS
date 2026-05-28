@@ -408,7 +408,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 /* ── TERMINAL MAXIMIZE — smooth spring animation, no transition conflict ── */
 .terminal-max-backdrop{position:fixed;inset:0;background:rgba(2,6,8,.9);backdrop-filter:blur(10px);z-index:9099;animation:backdropIn .28s ease both}
 @keyframes backdropIn{from{opacity:0}to{opacity:1}}
-.terminal-maximized{position:fixed !important;top:50% !important;left:50% !important;transform:translate(-50%,-50%) !important;width:min(1180px,96vw) !important;max-height:92vh !important;z-index:9100 !important;border-color:rgba(0,229,200,.5) !important;box-shadow:0 0 140px rgba(0,229,200,.2),0 50px 120px rgba(0,0,0,.9) !important;overflow:hidden !important;border-radius:18px !important;transition:none !important;animation:termMaxIn .44s cubic-bezier(.34,1.45,.64,1) both}
+.terminal-maximized{position:fixed !important;top:50% !important;left:50% !important;transform:translate(-50%,-50%) !important;width:min(1180px,96vw) !important;max-height:92vh !important;z-index:9999;border-color:rgba(0,229,200,.5) !important;box-shadow:0 0 140px rgba(0,229,200,.2),0 50px 120px rgba(0,0,0,.9) !important;overflow:hidden !important;border-radius:18px !important;transition:none !important;animation:termMaxIn .44s cubic-bezier(.34,1.45,.64,1) both}
 .extract-terminal.terminal-maximized{border-color:rgba(160,90,255,.5) !important;box-shadow:0 0 140px rgba(192,132,252,.2),0 50px 120px rgba(0,0,0,.9) !important}
 @keyframes termMaxIn{from{opacity:0;transform:translate(-50%,-50%) scale(.74)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
 .terminal-restoring{animation:termMaxOut .26s cubic-bezier(.4,0,.2,1) forwards !important;pointer-events:none !important}

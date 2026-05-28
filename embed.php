@@ -61,8 +61,23 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
 .pre-carrier-banner .pcb-clear:hover{color:var(--danger)}
 .img-payload-preview{max-width:100%;max-height:160px;object-fit:contain;border:1px solid var(--border);border-radius:8px;margin-top:8px;display:block}
 .payload-img-info{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:5px}
-.payload-tabs .media-tab{cursor:pointer}
-.method-note{font-family:'Space Mono',monospace;font-size:9px;color:var(--accent);padding:6px 10px;background:rgba(0,229,200,.06);border:1px solid rgba(0,229,200,.15);border-radius:6px;margin-bottom:8px}
+.upload-zone{transition:border-color .15s,background .15s,transform .15s}
+.upload-zone.drag-over{border-color:var(--accent)!important;background:rgba(0,229,200,.13)!important;transform:scale(1.015)}
+.pm-file-info{font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);padding:7px 10px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:7px;margin-top:8px;display:flex;align-items:center;gap:8px}
+.pm-file-info .pm-fi-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.pm-file-info .pm-fi-sz{white-space:nowrap;font-size:9px}
+.pm-file-info .pm-fi-clear{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:0 2px;transition:color .15s}
+.pm-file-info .pm-fi-clear:hover{color:var(--danger)}
+.method-note{font-family:'Space Mono',monospace;font-size:9px;color:var(--accent);padding:6px 10px;background:rgba(0,229,200,.06);border:1px solid rgba(0,229,200,.15);border-radius:6px;margin-bottom:8px;display:none}
+.steg-method-group{margin-bottom:10px}
+.steg-method-group:last-child{margin-bottom:0}
+.steg-method-group-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;padding:0 2px;display:flex;align-items:center;gap:6px}
+.steg-method-group-label::before{content:'';display:inline-block;width:3px;height:10px;border-radius:2px;background:var(--accent);flex-shrink:0}
+.steg-method-group-label.audio-group::before{background:#a78bfa}
+.steg-method-group-label.img-in-img-group::before{background:#f472b6}
+.steg-method-group-label.image-group::before{background:var(--accent)}
+.steg-method-group-label.video-group::before{background:#fbbf24}
+.steg-method-group+.steg-method-group{border-top:1px solid rgba(255,255,255,.05);padding-top:10px}
 </style>
 <div class="page-header" style="margin-bottom:16px">
   <div><div class="page-title">Embed Payload</div><div class="page-sub">// ENCRYPT &rarr; HIDE INSIDE MEDIA</div></div>
@@ -81,37 +96,24 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
           <div class="media-tab-icon">&#9998;</div><div class="media-tab-label">Text</div>
         </div>
         <div class="media-tab" id="pt-file" onclick="switchPayloadType('file')">
-          <div class="media-tab-icon">&#10792;</div><div class="media-tab-label">File</div>
-        </div>
-        <div class="media-tab" id="pt-image" onclick="switchPayloadType('image')">
-          <div class="media-tab-icon">&#128444;</div><div class="media-tab-label">Image</div>
+          <div class="media-tab-icon">&#128206;</div><div class="media-tab-label">File / Image</div>
         </div>
       </div>
       <div id="payload-text">
         <textarea name="payload_text" id="embed-payload" class="textarea" placeholder="Type your secret message here..." rows="6" oninput="persistEmbed()" style="resize:vertical"></textarea>
       </div>
       <div id="payload-file" style="display:none">
-        <div class="carrier-upload-row">
-          <div class="upload-zone carrier-drop-zone" onclick="document.getElementById('payload-file-input').click()">
-            <div class="upload-icon">&#128206;</div>
-            <div class="upload-text">Click or drag file to hide</div>
-            <div class="upload-sub">Any file type</div>
-          </div>
-          <div id="pf-preview" class="carrier-preview-panel" style="display:none"></div>
+        <div class="upload-zone carrier-drop-zone" id="pm-drop-zone" style="cursor:pointer" onclick="document.getElementById('payload-media-input').click()">
+          <div class="upload-icon" id="pm-icon">&#128206;</div>
+          <div class="upload-text" id="pm-upload-text">Click or drag file / image to hide</div>
+          <div class="upload-sub">Any file type &mdash; images unlock Image-in-Image steg</div>
         </div>
-        <input type="file" id="payload-file-input" style="display:none" onchange="handleCarrierSelect(this,'pf-preview');refreshStegMethods()">
-      </div>
-      <div id="payload-image" style="display:none">
-        <div class="upload-zone carrier-drop-zone" id="pi-drop" onclick="document.getElementById('payload-image-input').click()">
-          <div class="upload-icon">&#128444;</div>
-          <div class="upload-text">Click or drag image to hide inside carrier</div>
-          <div class="upload-sub">PNG, JPG, BMP &mdash; unlocks Image-in-Image steg</div>
+        <div id="pm-file-info" class="pm-file-info" style="display:none"></div>
+        <div id="pm-img-wrap" style="display:none;margin-top:8px">
+          <img id="pm-img-preview" class="img-payload-preview" src="" alt="">
+          <div class="payload-img-info" id="pm-img-info"></div>
         </div>
-        <div id="pi-preview-wrap" style="display:none;margin-top:10px">
-          <img id="pi-img-preview" class="img-payload-preview" src="" alt="Payload image">
-          <div class="payload-img-info" id="pi-img-info"></div>
-        </div>
-        <input type="file" id="payload-image-input" accept="image/*" style="display:none" onchange="handleImagePayloadSelect(this);refreshStegMethods()">
+        <input type="file" id="payload-media-input" accept="image/*,audio/*,video/*,application/*,.pdf,.zip,.txt,.doc,.docx,.xls,.xlsx,*" style="display:none" onchange="handleMediaPayloadSelect(this);refreshStegMethods()">
       </div>
     </div>
     <div class="card" id="card-carrier">
@@ -138,7 +140,7 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
         <div style="display:none" id="carrier-upload-row">
       <?php else:?>
         <div class="carrier-upload-row" id="carrier-upload-row">
-      <?php endif;?>
+      <?php endif?>
           <div class="upload-zone carrier-drop-zone" onclick="document.getElementById('carrier-input').click()">
             <div class="upload-icon" id="carrier-icon">&#128444;</div>
             <div class="upload-text">Click or drag carrier file</div>
@@ -147,13 +149,13 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
           </div>
           <div id="carrier-preview" class="carrier-preview-panel" style="display:none"></div>
         </div>
-        <input type="file" id="carrier-input" style="display:none" onchange="handleCarrierSelect(this,'carrier-preview');refreshStegMethods()" accept="image/*,audio/*,video/*">
+        <input type="file" id="carrier-input" style="display:none" onchange="onCarrierChange(this)" accept="image/*,audio/*,video/*">
         <input type="hidden" id="media-type-input" value="<?=$preCarrierFile?htmlspecialchars($preCarrierFile['file_type']):'image'?>">
         <input type="hidden" id="payload-type-input" value="text">
         <input type="hidden" id="steg-method-input" value="lsb">
         <div class="steg-method-section">
           <div class="steg-method-label"><span class="sml-dot"></span>Steganography Method</div>
-          <div id="steg-method-note" class="method-note" style="display:none"></div>
+          <div id="steg-method-note" class="method-note"></div>
           <div class="steg-method-cards" id="steg-method-cards">
             <div class="steg-method-loading"><div class="sml-spinner"></div>Loading methods&hellip;</div>
           </div>
@@ -172,7 +174,7 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
       </div>
       <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);line-height:1.5">
         Required to extract the payload. Share with recipient.<br>
-        <?php if($user['steg_key']??null):?><a href="<?=SITE_URL?>/profile.php" style="color:var(--accent)">Your profile steg key &rarr;</a><?php endif;?>
+        <?php if($user['steg_key']??null):?><a href="<?=SITE_URL?>/profile.php" style="color:var(--accent)">Your profile steg key &rarr;</a><?php endif?>
       </div>
     </div>
   </div>
@@ -188,11 +190,11 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
               <option value="">-- Select a saved chain --</option>
               <?php foreach($chainsWithSteps as $c):?>
                 <option value="<?=addslashes($chainKeysMap[$c['chain_id']]??'')?>"><?=htmlspecialchars($c['chain_name'])?> (<?=$c['layer_count']?> layers)</option>
-              <?php endforeach;?>
+              <?php endforeach?>
             </select>
           </div>
         </div>
-      <?php endif;?>
+      <?php endif?>
       <div class="input-group" style="margin-bottom:10px">
         <label class="input-label">Chain Key <span class="optional-tag">(paste to auto-load)</span></label>
         <div class="input-wrap">
@@ -205,7 +207,7 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
           <div class="algo-chip <?=$cat?><?=$a['algo_slug']==='netrunner'?' netrunner-chip':''?>" onclick="addToChain('<?=addslashes($a['algo_name'])?>','<?=$cat?>','<?=$a['algo_slug']?>')">
             <?=htmlspecialchars($a['algo_name'])?> <span class="chip-plus">+</span>
           </div>
-        <?php endforeach;endforeach;?>
+        <?php endforeach;endforeach?>
         <a href="<?=SITE_URL?>/chains.php" class="algo-chip-more">All &rarr;</a>
       </div>
       <div class="pipeline-status-bar">
@@ -257,90 +259,120 @@ const IS_GUEST=<?=$isGuest?'true':'false'?>;
 let _engineOnline=false,_currentFileType='<?=$preCarrierFile?htmlspecialchars($preCarrierFile['file_type']):'image'?>',_selectedMethod='lsb';
 const STEG_METHODS={
   image:[
-    {slug:'lsb',name:'LSB Injection',desc:'1-bit per RGB channel — highest capacity (PNG output)',special:false},
-    {slug:'xor_pixel',name:'XOR Pixel',desc:'Key-stream XOR on LSBs — keyed steganography',special:true,badge:'special'},
-    {slug:'alpha',name:'Alpha Channel',desc:'Hidden in transparency layer — PNG only, zero visual change',special:false},
+    {slug:'lsb',name:'LSB Injection',desc:'1-bit per RGB channel — highest capacity, lossless PNG output'},
+    {slug:'xor_pixel',name:'XOR Pixel',desc:'Key-stream XOR on LSBs — keyed, key-dependent extraction',special:true,badge:'special'},
+    {slug:'alpha',name:'Alpha Channel',desc:'Hidden in transparency layer — PNG only, zero visual change'},
     {slug:'dct',name:'DCT Embed',desc:'Mid-frequency DCT coefficients — JPEG output, WhatsApp-resistant',special:true,badge:'dct'},
   ],
   image_in_image:[
-    {slug:'img_in_img',name:'Image-in-Image',desc:'4-bit nibble merge — embeds a full image inside the carrier image',special:true,badge:'special'},
+    {slug:'img_in_img',name:'Image-in-Image',desc:'4-bit nibble merge — embeds full image inside carrier, PNG output',special:true,badge:'special'},
   ],
   audio:[
-    {slug:'wav_lsb',name:'WAV LSB',desc:'Least-significant bit in audio PCM samples — inaudible'},
-    {slug:'phase',name:'Phase Coding',desc:'Encode data in DFT phase segments — spectrally covert'},
+    {slug:'wav_lsb',name:'WAV LSB',desc:'Least-significant bit in PCM audio samples — inaudible, highest capacity'},
+    {slug:'phase',name:'Phase Coding',desc:'Encode payload in DFT phase segments — spectrally covert'},
+    {slug:'aahe',name:'AAHE',desc:'Adaptive audio hiding engine — psychoacoustic masking + keyed XOR',special:true,badge:'special'},
   ],
   video:[
     {slug:'frame_lsb',name:'Frame LSB',desc:'LSB steganography across all video frames — high capacity'},
   ]
 };
 function _getMethods(fileType,payloadType){
-  if(fileType==='image'&&payloadType==='image')return STEG_METHODS.image_in_image;
-  return STEG_METHODS[fileType]||STEG_METHODS.image;
+  if(fileType==='audio')return [{label:'Audio Steganography',cls:'audio-group',methods:STEG_METHODS.audio}];
+  if(fileType==='video')return [{label:'Video Steganography',cls:'video-group',methods:STEG_METHODS.video}];
+  if(payloadType==='file'||payloadType==='image'||payloadType==='media')return [
+    {label:'Image-in-Image',cls:'img-in-img-group',methods:STEG_METHODS.image_in_image},
+    {label:'Standard Image Methods',cls:'image-group',methods:STEG_METHODS.image},
+  ];
+  return [{label:'Image Steganography',cls:'image-group',methods:STEG_METHODS.image}];
 }
-function renderStegMethods(methods){
+function renderStegMethods(groups){
   const c=document.getElementById('steg-method-cards');
   const note=document.getElementById('steg-method-note');
-  const payloadType=document.getElementById('payload-type-input')?.value||'text';
   if(!c)return;
-  if(payloadType==='image'&&_currentFileType==='image'){
-    note.style.display='block';note.textContent='Image payload detected — only Image-in-Image method available';
-  } else {note.style.display='none';}
-  if(!methods||!methods.length){c.innerHTML='<div class="steg-method-loading" style="color:var(--warning)">No methods available.</div>';return;}
+  const pt=document.getElementById('payload-type-input')?.value||'text';
+  if((pt==='file'||pt==='image'||pt==='media')&&_currentFileType==='image'){
+    note.style.display='block';
+    note.textContent='\u26a1 Image payload — Image-in-Image recommended; standard methods also available';
+  } else if(_currentFileType==='audio'){
+    note.style.display='block';
+    note.textContent='\ud83c\udfb5 Audio carrier — WAV required; AAHE is most covert';
+  } else {
+    note.style.display='none';
+  }
+  const allMethods=groups.flatMap(g=>g.methods||[]);
+  if(!allMethods.length){c.innerHTML='<div class="steg-method-loading" style="color:var(--warning)">No methods available.</div>';return;}
+  const keepSlug=allMethods.some(m=>m.slug===_selectedMethod)?_selectedMethod:allMethods[0].slug;
   c.innerHTML='';
-  methods.forEach((m,i)=>{
-    const isSpec=m.special||false;
-    const badge=m.badge?`<span class="smc-badge ${m.badge}">${m.badge==='dct'?'DCT':'NEW'}</span>`:'';
-    const card=document.createElement('label');
-    card.className='steg-method-card'+(i===0?' selected':'')+(isSpec?' special-method':'');
-    card.innerHTML=`<input type="radio" name="steg_method_radio" value="${m.slug}" ${i===0?'checked':''}><div class="smc-indicator"></div><div class="smc-body"><div class="smc-name">${m.name}${badge}</div><div class="smc-desc">${m.desc||''}</div></div>`;
-    card.addEventListener('click',()=>{
-      document.querySelectorAll('.steg-method-card').forEach(x=>x.classList.remove('selected'));
-      card.classList.add('selected');_selectedMethod=m.slug;
-      const inp=document.getElementById('steg-method-input');if(inp)inp.value=m.slug;
+  const multi=groups.filter(g=>(g.methods||[]).length>0).length>1;
+  groups.forEach(group=>{
+    const methods=group.methods||[];if(!methods.length)return;
+    const gDiv=document.createElement('div');gDiv.className='steg-method-group';
+    if(multi){const lbl=document.createElement('div');lbl.className='steg-method-group-label '+(group.cls||'');lbl.textContent=group.label||'';gDiv.appendChild(lbl);}
+    const wrap=document.createElement('div');wrap.className='steg-method-cards';
+    methods.forEach(m=>{
+      const sel=m.slug===keepSlug;
+      const badge=m.badge==='dct'?'<span class="smc-badge dct">DCT</span>':m.badge==='special'?'<span class="smc-badge special">\u2605</span>':'';
+      const card=document.createElement('label');
+      card.className='steg-method-card'+(sel?' selected':'')+(m.special?' special-method':'');
+      card.dataset.slug=m.slug;
+      card.innerHTML=`<input type="radio" name="steg_method_radio" value="${m.slug}" ${sel?'checked':''}><div class="smc-indicator"></div><div class="smc-body"><div class="smc-name">${m.name}${badge}</div><div class="smc-desc">${m.desc||''}</div></div>`;
+      card.addEventListener('click',()=>{
+        document.querySelectorAll('.steg-method-card').forEach(x=>x.classList.remove('selected'));
+        card.classList.add('selected');_selectedMethod=m.slug;
+        const inp=document.getElementById('steg-method-input');if(inp)inp.value=m.slug;
+      });
+      if(sel){_selectedMethod=m.slug;const inp=document.getElementById('steg-method-input');if(inp)inp.value=m.slug;}
+      wrap.appendChild(card);
     });
-    if(i===0){_selectedMethod=m.slug;const inp=document.getElementById('steg-method-input');if(inp)inp.value=m.slug;}
-    c.appendChild(card);
+    gDiv.appendChild(wrap);c.appendChild(gDiv);
   });
 }
 function refreshStegMethods(){
-  const pt=document.getElementById('payload-type-input')?.value||'text';
-  renderStegMethods(_getMethods(_currentFileType,pt));
+  renderStegMethods(_getMethods(_currentFileType,document.getElementById('payload-type-input')?.value||'text'));
 }
 async function pingEngine(){
   const dot=document.getElementById('engine-dot'),txt=document.getElementById('engine-status-txt');
-  if(dot)dot.className='engine-dot';if(txt)txt.textContent='Pinging engine\u2026';
+  dot.className='engine-dot';txt.textContent='Pinging engine\u2026';
   try{
     const fd=new FormData();fd.append('action','ping');
     const r=await fetch(EMBED_URL,{method:'POST',body:fd});
-    const ct=r.headers.get('content-type')||'';
-    if(!ct.includes('json'))throw new Error('Non-JSON');
+    if(!r.headers.get('content-type')?.includes('json'))throw new Error('Non-JSON');
     const d=await r.json();
-    if(d.status==='ok'||d.version){_engineOnline=true;if(dot)dot.className='engine-dot online';if(txt)txt.textContent='Engine online — v'+(d.version||'?');}
-    else throw new Error(d.message||'Ping failed');
-  }catch(e){_engineOnline=false;if(dot)dot.className='engine-dot offline';if(txt)txt.textContent='Engine offline — static methods active';}
+    if(d.status==='ok'||d.version){_engineOnline=true;dot.className='engine-dot online';txt.textContent='Engine online \u2014 v'+(d.version||'?');}
+    else throw new Error(d.message||'fail');
+  }catch(e){_engineOnline=false;dot.className='engine-dot offline';txt.textContent='Engine offline \u2014 static methods active';}
 }
-function handleImagePayloadSelect(input){
+function handleMediaPayloadSelect(input){
   const file=input?.files?.[0];if(!file)return;
-  const wrap=document.getElementById('pi-preview-wrap'),img=document.getElementById('pi-img-preview'),info=document.getElementById('pi-img-info');
-  if(wrap&&img&&info){const url=URL.createObjectURL(file);img.src=url;img.onload=()=>{info.textContent=file.name+' \u2014 '+img.naturalWidth+'\xd7'+img.naturalHeight+'px \u2014 '+(file.size>1048576?(file.size/1048576).toFixed(2)+' MB':(file.size/1024).toFixed(1)+' KB');};wrap.style.display='block';}
+  const isImg=file.type.startsWith('image/');
+  const sz=file.size>1048576?(file.size/1048576).toFixed(2)+' MB':(file.size/1024).toFixed(1)+' KB';
+  document.getElementById('pm-icon').textContent=isImg?'\uD83D\uDDBC':'\uD83D\uDCC4';
+  document.getElementById('pm-upload-text').textContent=isImg?'Image ready — drag to replace':'File ready — drag to replace';
+  const fi=document.getElementById('pm-file-info');
+  fi.style.display='flex';
+  fi.innerHTML='<span class="pm-fi-name">'+file.name+'</span><span class="pm-fi-sz">'+sz+'</span><button class="pm-fi-clear" onclick="clearPayloadMedia()" title="Remove">\u2715</button>';
+  const wrap=document.getElementById('pm-img-wrap'),img=document.getElementById('pm-img-preview');
+  if(isImg){img.src=URL.createObjectURL(file);img.onload=()=>{document.getElementById('pm-img-info').textContent=img.naturalWidth+'\xd7'+img.naturalHeight+'px';};wrap.style.display='block';}
+  else wrap.style.display='none';
 }
-function switchPayloadType(type){
-  ['text','file','image'].forEach(t=>{
-    document.getElementById('pt-'+t)?.classList.toggle('active',t===type);
-    const el=document.getElementById('payload-'+t);if(el)el.style.display=t===type?'block':'none';
-  });
-  const inp=document.getElementById('payload-type-input');if(inp)inp.value=type;
+function clearPayloadMedia(){
+  document.getElementById('payload-media-input').value='';
+  document.getElementById('pm-file-info').style.display='none';
+  document.getElementById('pm-img-wrap').style.display='none';
+  document.getElementById('pm-icon').textContent='\uD83D\uDCC4';
+  document.getElementById('pm-upload-text').textContent='Click or drag file / image to hide';
   refreshStegMethods();
 }
-function switchMedia(type){
-  ['image','audio','video'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
-  const info={image:{icon:'\uD83D\uDDBC',sub:'PNG, JPG, BMP supported',tech:'LSB / DCT / Alpha Steganography'},audio:{icon:'\uD83C\uDFB5',sub:'WAV supported',tech:'LSB / Phase Coding'},video:{icon:'\uD83C\uDFA6',sub:'MP4, AVI supported',tech:'Frame LSB Steganography'}};
-  const m=info[type]||info.image;
-  const ic=document.getElementById('carrier-icon');if(ic)ic.textContent=m.icon;
-  const sb=document.getElementById('carrier-sub');if(sb)sb.textContent=m.sub;
-  const tc=document.getElementById('carrier-technique');if(tc)tc.textContent=m.tech;
-  const mi=document.getElementById('media-type-input');if(mi)mi.value=type;
-  _currentFileType=type;refreshStegMethods();
+function onCarrierChange(input){
+  const f=input?.files?.[0];
+  if(f){
+    const type=f.type.startsWith('audio/')?'audio':f.type.startsWith('video/')?'video':'image';
+    _currentFileType=type;
+    document.getElementById('media-type-input').value=type;
+    ['image','audio','video'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
+  }
+  handleCarrierSelect(input,'carrier-preview');
+  refreshStegMethods();
 }
 function clearPreCarrier(){
   document.getElementById('pre-carrier-banner')?.remove();
@@ -357,9 +389,8 @@ function _termMetric(b,label,value,pct,color){
 function _termAnimateScan(b,label,count,delay,cb){
   let i=0;const chars='\u2593\u2592\u2591\u2588\u2593\u2592\u2591\u2593'.split('');
   const iv=setInterval(()=>{
-    const bar=chars[i%chars.length].repeat(Math.floor(Math.random()*8+4));
     const el=document.createElement('div');el.className='t-line scan';
-    el.textContent=label+'  '+bar+'  ['+Math.round((i+1)/count*100)+'%]';
+    el.textContent=label+'  '+chars[i%8].repeat(Math.floor(Math.random()*8+4))+'  ['+Math.round((i+1)/count*100)+'%]';
     b.appendChild(el);b.scrollTop=b.scrollHeight;i++;
     if(i>=count){clearInterval(iv);if(cb)setTimeout(cb,delay);}
   },delay);
@@ -370,8 +401,8 @@ function loadSavedChainEmbed(key){
   catch(e){showToast('Failed to load chain');}
 }
 function persistEmbed(){try{localStorage.setItem('embed_payload',document.getElementById('embed-payload')?.value||'');localStorage.setItem('embed_stego_key',document.getElementById('embed-stego-key')?.value||'');}catch(e){}}
-function restoreEmbed(){try{const p=localStorage.getItem('embed_payload');const k=localStorage.getItem('embed_stego_key');if(p&&document.getElementById('embed-payload'))document.getElementById('embed-payload').value=p;if(k&&document.getElementById('embed-stego-key'))document.getElementById('embed-stego-key').value=k;}catch(e){}}
-function _getPayloadFile(){const pt=document.getElementById('payload-type-input')?.value||'text';if(pt==='image')return document.getElementById('payload-image-input')?.files?.[0]||null;if(pt==='file')return document.getElementById('payload-file-input')?.files?.[0]||null;return null;}
+function restoreEmbed(){try{const p=localStorage.getItem('embed_payload');const k=localStorage.getItem('embed_stego_key');if(p)document.getElementById('embed-payload').value=p;if(k)document.getElementById('embed-stego-key').value=k;}catch(e){}}
+function _getPayloadFile(){const pt=document.getElementById('payload-type-input')?.value||'text';return(pt==='file'||pt==='media'||pt==='image')?document.getElementById('payload-media-input')?.files?.[0]||null:null;}
 function runEmbed(){
   const payloadText=document.getElementById('embed-payload')?.value||'';
   const payloadType=document.getElementById('payload-type-input')?.value||'text';
@@ -383,7 +414,7 @@ function runEmbed(){
   const btn=document.getElementById('embed-btn');
   if(!carrierFile&&!preCarrierId){showStegError('Upload a carrier file first');return;}
   if(payloadType==='text'&&!payloadText){showStegError('Enter a payload message');return;}
-  if((payloadType==='file'||payloadType==='image')&&!payloadFile){showStegError('Select a payload '+(payloadType==='image'?'image':'file')+' first');return;}
+  if(payloadType!=='text'&&!payloadFile){showStegError('Select a payload file or image first');return;}
   if(!stegoKey){showStegError('Enter your stego key');return;}
   setLoading(btn,true);if(btn._setProc)btn._setProc(true);
   showTerminal('embed-terminal');
@@ -391,82 +422,127 @@ function runEmbed(){
   const hasCrypto=chain.some(s=>['symmetric','asymmetric','classical'].includes(s.category));
   const payloadBytes=payloadType!=='text'?(payloadFile?.size||0):new TextEncoder().encode(payloadText).length;
   const carrierSizeKB=preCarrierId?'?':((carrierFile?.size||0)/1024).toFixed(1);
-  animateTerminal(tb,['Initializing StegoPS secure session\u2026','Authenticating operator credentials\u2026','Connecting to Python engine\u2026'],()=>{
-    addTermLine(tb,_engineOnline?'success':'warn',(_engineOnline?'\u2713 Engine online':'\u26a0 Engine status unknown')+' \u2014 proceeding\u2026');
+  animateTerminal(tb,['Initializing StegoPS secure session\u2026','Authenticating credentials\u2026','Connecting to Python engine\u2026'],()=>{
+    addTermLine(tb,_engineOnline?'success':'warn',(_engineOnline?'\u2713 Engine online':'\u26a0 Engine unknown')+' \u2014 proceeding\u2026');
     _termDivider(tb);
     addTermLine(tb,'server','> Carrier: '+(preCarrierId?'Pre-loaded #'+preCarrierId:(carrierFile?.name||'?')));
-    addTermLine(tb,'','> Payload type: '+payloadType.toUpperCase());
-    addTermLine(tb,'','> Steg method: '+stegMethod.toUpperCase().replace(/_/g,' '));
-    if(!preCarrierId)_termMetric(tb,'Carrier size',carrierSizeKB+' KB',Math.min(100,(carrierFile?.size||0)/1024/10),'#60a5fa');
+    addTermLine(tb,'','> Payload: '+payloadType.toUpperCase()+' / > Method: '+stegMethod.toUpperCase().replace(/_/g,' '));
+    if(!preCarrierId)_termMetric(tb,'Carrier',carrierSizeKB+' KB',Math.min(100,(carrierFile?.size||0)/1024/10),'#60a5fa');
     setTimeout(()=>{
-      addTermLine(tb,'','> Calculating embedding capacity\u2026');
-      _termAnimateScan(tb,'PIXEL SCAN',4,80,()=>{
+      _termAnimateScan(tb,'SCAN',4,80,()=>{
         const estCapKB=preCarrierId?'?':Math.floor((carrierFile?.size||0)*0.04/1024);
-        if(!preCarrierId)_termMetric(tb,'Est. capacity',estCapKB+' KB',60,'#34d399');
+        if(!preCarrierId)_termMetric(tb,'Capacity',estCapKB+' KB',60,'#34d399');
         _termMetric(tb,'Payload',payloadBytes+' B',Math.min(100,payloadBytes/(estCapKB>0?estCapKB*1024:1024)*100),'#fbbf24');
         _termDivider(tb);
         if(chain.length>0){
-          addTermLine(tb,'server','> Building pipeline \u2014 '+chain.length+' layer'+(chain.length>1?'s':''));
-          chain.forEach((s,i)=>addTermLine(tb,'','  Layer '+(i+1)+': '+s.name+(s.key?' \u2014 [keyed]':' \u2014 [keyless]')));
+          addTermLine(tb,'server','> Pipeline \u2014 '+chain.length+' layer'+(chain.length>1?'s':''));
+          chain.forEach((s,i)=>addTermLine(tb,'','  '+(i+1)+': '+s.name+(s.key?' [keyed]':' [keyless]')));
           if(hasCrypto)_termAnimateScan(tb,'ENCRYPT',3,60,null);
-        } else {addTermLine(tb,'warn','> No encryption chain \u2014 embedding raw payload');}
+        } else addTermLine(tb,'warn','> No chain \u2014 embedding raw payload');
         setTimeout(()=>{
           _termDivider(tb);
-          addTermLine(tb,'server','> Applying '+stegMethod.toUpperCase().replace(/_/g,' ')+' steganography\u2026');
-          addTermLine(tb,'','> Embedding '+payloadBytes+' bytes\u2026');
+          addTermLine(tb,'server','> Applying '+stegMethod.toUpperCase().replace(/_/g,' ')+'\u2026');
           _termAnimateScan(tb,'EMBED',5,70,()=>{
-            addTermLine(tb,'','> POST /api/embed \u2192 engine\u2026');
             const fd=new FormData();
             fd.append('action','embed');
-            if(payloadType==='image')fd.append('payload_image',payloadFile);
-            else if(payloadType==='file')fd.append('payload_file',payloadFile);
+            if(payloadType!=='text')fd.append('payload_media',payloadFile);
             else fd.append('payload_text',payloadText);
-            fd.append('stego_key',stegoKey);
-            fd.append('steg_method',stegMethod);
+            fd.append('stego_key',stegoKey);fd.append('steg_method',stegMethod);
             fd.append('chain_data',JSON.stringify(chain));
             fd.append('media_type',document.getElementById('media-type-input').value);
-            fd.append('payload_type',payloadType);
+            fd.append('payload_type',payloadType!=='text'?'media':payloadType);
             if(preCarrierId)fd.append('carrier_file_id',preCarrierId);
             else fd.append('carrier',carrierFile);
             fetch(EMBED_URL,{method:'POST',body:fd})
-              .then(r=>{const ct=r.headers.get('content-type')||'';if(!ct.includes('json'))return r.text().then(t=>{throw new Error('Server error ('+r.status+'): '+t.substring(0,200));});return r.json();})
+              .then(r=>{if(!r.headers.get('content-type')?.includes('json'))return r.text().then(t=>{throw new Error('Server error: '+t.substring(0,200));});return r.json();})
               .then(d=>{
                 setLoading(btn,false);_termDivider(tb);
                 if(d.success){
                   if(btn._flashOk)btn._flashOk();
-                  addTermLine(tb,'success','\u2713 OPERATION COMPLETE \u2014 #'+d.op_id);
-                  addTermLine(tb,'','');addTermLine(tb,'metric','  ANALYSIS:');
-                  _termMetric(tb,'Carrier in',((d.carrier_size||0)/1024).toFixed(1)+' KB',70,'#60a5fa');
-                  _termMetric(tb,'Output',((d.output_size||0)/1024).toFixed(1)+' KB',72,'#00e5c8');
-                  _termMetric(tb,'Payload',(d.payload_size||payloadBytes)+' B',20,'#fbbf24');
-                  addTermLine(tb,'','');
-                  addTermLine(tb,'server','  Method: '+(d.steg_method||stegMethod).toUpperCase().replace(/_/g,' '));
+                  addTermLine(tb,'success','\u2713 COMPLETE \u2014 #'+d.op_id);
+                  _termMetric(tb,'In',((d.carrier_size||0)/1024).toFixed(1)+' KB',70,'#60a5fa');
+                  _termMetric(tb,'Out',((d.output_size||0)/1024).toFixed(1)+' KB',72,'#00e5c8');
                   if(d.fallback_note)addTermLine(tb,'warn','\u26a0 '+d.fallback_note);
-                  addTermLine(tb,'server','  Layers: '+(d.layers||chain.length));
-                  addTermLine(tb,'','');
                   if(IS_GUEST){
-                    addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download output</a> &nbsp; <span style="color:var(--text-muted);font-size:10px">&#9888; Register to create share links</span>');
+                    addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a>');
                   } else {
-                    addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download output</a> &nbsp; <a href="<?=SITE_URL?>/share.php?op='+d.op_id+'" style="color:#a78bfa">&#11041; Create Share Link</a>');
+                    addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a> &nbsp; <a href="<?=SITE_URL?>/share.php?op='+d.op_id+'" style="color:#a78bfa">&#11041; Share</a>');
                   }
                   localStorage.removeItem('embed_payload');
                 } else {
                   if(btn._flashErr)btn._flashErr();else setLoading(btn,false);
-                  addTermLine(tb,'err','\u2717 FAILED: '+d.message);
-                  showStegError(d.message);
+                  addTermLine(tb,'err','\u2717 '+d.message);showStegError(d.message);
                 }
               })
-              .catch(e=>{setLoading(btn,false);if(btn._flashErr)btn._flashErr();_termDivider(tb);addTermLine(tb,'err','\u2717 CONNECTION ERROR');addTermLine(tb,'err','  '+e.message);showStegError('Network error: '+e.message);});
+              .catch(e=>{setLoading(btn,false);if(btn._flashErr)btn._flashErr();addTermLine(tb,'err','\u2717 '+e.message);showStegError(e.message);});
           });
         },350);
       });
     },200);
   });
 }
+function initDrop(zone,input){
+  if(!zone||!input)return;
+  ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();e.dataTransfer&&(e.dataTransfer.dropEffect='copy');zone.classList.add('drag-over');}));
+  ['dragleave','dragend'].forEach(ev=>zone.addEventListener(ev,e=>{if(ev==='dragleave'&&zone.contains(e.relatedTarget))return;zone.classList.remove('drag-over');}));
+  zone.addEventListener('drop',e=>{
+    e.preventDefault();e.stopPropagation();zone.classList.remove('drag-over');
+    const f=e.dataTransfer.files[0];if(!f)return;
+    try{const dt=new DataTransfer();dt.items.add(f);input.files=dt.files;}catch(ex){}
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+}
+const _mediaInfo={
+  image:{icon:'\uD83D\uDDBC',sub:'PNG, JPG, BMP supported',technique:'LSB / DCT / Alpha / Image-in-Image',accept:'image/*'},
+  audio:{icon:'\uD83C\uDFB5',sub:'WAV required for all audio methods',technique:'WAV LSB / Phase Coding / AAHE',accept:'audio/wav,audio/*'},
+  video:{icon:'\uD83C\uDFA6',sub:'MP4, AVI supported',technique:'Frame LSB Steganography',accept:'video/*'}
+};
+const _termNodes={};
 window.addEventListener('DOMContentLoaded',()=>{
-  restoreEmbed();renderChain();pingEngine();
-  const initType=document.getElementById('media-type-input')?.value||'image';
-  refreshStegMethods();
+  restoreEmbed();renderChain();pingEngine();refreshStegMethods();
+  initDrop(document.querySelector('#carrier-upload-row .upload-zone'),document.getElementById('carrier-input'));
+  initDrop(document.getElementById('pm-drop-zone'),document.getElementById('payload-media-input'));
+  const _origSPT=window.switchPayloadType;
+  window.switchPayloadType=function(type){_origSPT&&_origSPT(type);refreshStegMethods();};
+  window.switchMedia=function(type){
+    ['image','audio','video'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
+    const m=_mediaInfo[type]||_mediaInfo.image;
+    document.getElementById('carrier-icon').textContent=m.icon;
+    document.getElementById('carrier-sub').textContent=m.sub;
+    document.getElementById('carrier-technique').textContent=m.technique;
+    document.getElementById('media-type-input').value=type;
+    const ci=document.getElementById('carrier-input');if(ci)ci.accept=m.accept;
+    const cp=document.getElementById('carrier-preview');if(cp){cp.style.display='none';cp.innerHTML='';}
+    _currentFileType=type;
+    refreshStegMethods();
+  };
+  const _origMax=window.termMaximize,_origRestore=window.termRestore,_origRestoreInstant=window._termRestoreInstant;
+  window.termMaximize=function(id){
+    const term=document.getElementById(id);if(!term)return;
+    if(!term.classList.contains('terminal-maximized')){
+      _termNodes[id]={parent:term.parentNode,next:term.nextSibling};
+      document.body.appendChild(term);
+    }
+    _origMax&&_origMax(id);
+  };
+  window.termRestore=function(id){
+    _origRestore&&_origRestore(id);
+    const info=_termNodes[id];
+    if(info){setTimeout(()=>{
+      const term=document.getElementById(id);if(!term)return;
+      info.next&&info.next.parentNode===info.parent?info.parent.insertBefore(term,info.next):info.parent.appendChild(term);
+      delete _termNodes[id];
+    },260);}
+  };
+  window._termRestoreInstant=function(id){
+    _origRestoreInstant&&_origRestoreInstant(id);
+    const info=_termNodes[id];
+    if(info){
+      const term=document.getElementById(id);if(!term)return;
+      info.next&&info.next.parentNode===info.parent?info.parent.insertBefore(term,info.next):info.parent.appendChild(term);
+      delete _termNodes[id];
+    }
+  };
 });
 </script>
 <?php require_once 'php/includes/footer.php';?>
