@@ -1,4 +1,4 @@
-import wave, struct, zlib, hashlib, os
+import wave, struct, zlib, hashlib, os, tempfile
 import numpy as np
 
 _MAGIC      = b'\xDE\xAD'
@@ -8,6 +8,32 @@ _AAHE_BIT_PLANE  = 1
 _AAHE_WINDOW     = 256
 _AAHE_PERCENTILE = 55
 
+# ── MP3 / non-WAV conversion ───────────────────────────────────────────────────
+def _ensure_wav(path: str) -> tuple[str, bool]:
+    """Return (wav_path, is_tmp). Converts MP3/OGG/FLAC/etc to WAV if needed."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in ('.wav',):
+        return path, False
+    try:
+        from pydub import AudioSegment
+    except ImportError:
+        raise ValueError(
+            "pydub is required for non-WAV audio. Install: pip install pydub"
+        )
+    fmt_map = {
+        '.mp3': 'mp3', '.ogg': 'ogg', '.flac': 'flac',
+        '.aac': 'aac', '.m4a': 'mp4', '.opus': 'opus',
+        '.wma': 'asf', '.aiff': 'aiff', '.au': 'au',
+    }
+    fmt = fmt_map.get(ext, ext.lstrip('.'))
+    audio = AudioSegment.from_file(path, format=fmt)
+    tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+    tmp.close()
+    audio = audio.set_frame_rate(44100).set_channels(1).set_sample_width(2)
+    audio.export(tmp.name, format='wav')
+    return tmp.name, True
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 def _pack(data: bytes) -> bytes:
     crc = struct.pack('>I', zlib.crc32(data) & 0xFFFFFFFF)
     return _MAGIC + len(data).to_bytes(4, 'big') + crc + data
@@ -32,41 +58,57 @@ def _write_wav(path: str, params, samples: np.ndarray):
         wf.setparams(params)
         wf.writeframes(samples.astype(dtype).tobytes())
 
+# ── Public API ─────────────────────────────────────────────────────────────────
 def embed(carrier_path: str, data: bytes, out_path: str, key: str, method: str):
-    if   method == 'wav_lsb': _embed_wav_lsb(carrier_path, data, out_path)
-    elif method == 'phase':   _embed_phase(carrier_path, data, out_path)
-    elif method == 'aahe':    _embed_aahe(carrier_path, data, out_path, key)
-    else: raise ValueError(f'Unknown audio steg method: {method}')
+    wav_path, is_tmp = _ensure_wav(carrier_path)
+    try:
+        if   method == 'wav_lsb': _embed_wav_lsb(wav_path, data, out_path)
+        elif method == 'phase':   _embed_phase(wav_path, data, out_path)
+        elif method == 'aahe':    _embed_aahe(wav_path, data, out_path, key)
+        else: raise ValueError(f'Unknown audio steg method: {method}')
+    finally:
+        if is_tmp:
+            try: os.unlink(wav_path)
+            except OSError: pass
 
 def extract(stego_path: str, key: str, method: str) -> bytes:
-    if   method == 'wav_lsb': return _extract_wav_lsb(stego_path)
-    elif method == 'phase':   return _extract_phase(stego_path)
-    elif method == 'aahe':    return _extract_aahe(stego_path, key)
-    raise ValueError(f'Unknown audio steg method: {method}')
+    wav_path, is_tmp = _ensure_wav(stego_path)
+    try:
+        if   method == 'wav_lsb': return _extract_wav_lsb(wav_path)
+        elif method == 'phase':   return _extract_phase(wav_path)
+        elif method == 'aahe':    return _extract_aahe(wav_path, key)
+        raise ValueError(f'Unknown audio steg method: {method}')
+    finally:
+        if is_tmp:
+            try: os.unlink(wav_path)
+            except OSError: pass
 
+# ── WAV LSB — optimised with numpy vectorisation ──────────────────────────────
 def _embed_wav_lsb(carrier_path: str, data: bytes, out_path: str):
     params, samples = _read_wav(carrier_path)
     payload = _pack(data)
-    bits    = _bits(payload)
-    if len(bits) > len(samples):
+    nbits   = len(payload) * 8
+    if nbits > len(samples):
         raise ValueError(f'Payload too large. Capacity: {len(samples) // 8} bytes')
-    for i, bit in enumerate(bits):
-        samples[i] = (int(samples[i]) & ~1) | int(bit)
+    bits = np.unpackbits(np.frombuffer(payload, dtype=np.uint8))
+    samples[:nbits] = (samples[:nbits].astype(np.int16) & np.int16(-2)) | bits.astype(np.int16)
     _write_wav(out_path, params, samples)
 
 def _extract_wav_lsb(stego_path: str) -> bytes:
     params, samples = _read_wav(stego_path)
-    hlen  = (len(_MAGIC) + 4) * 8
-    hbits = ''.join(str(int(s) & 1) for s in samples[:hlen])
-    hdr   = bytes(int(hbits[i:i+8], 2) for i in range(0, hlen, 8))
-    if hdr[:2] != _MAGIC: raise ValueError('No hidden payload found')
-    length = int.from_bytes(hdr[2:6], 'big')
-    total  = hlen + length * 8
-    if total > len(samples): raise ValueError('Payload length exceeds audio samples')
-    all_bits = ''.join(str(int(s) & 1) for s in samples[:total])
-    pbits    = all_bits[hlen:]
-    return bytes(int(pbits[i:i+8], 2) for i in range(0, len(pbits), 8))
+    hdr_bytes = len(_MAGIC) + 4 + 4          # magic + length + crc
+    hdr_bits  = hdr_bytes * 8
+    raw_hdr   = np.packbits(samples[:hdr_bits].astype(np.uint8) & 1).tobytes()
+    if raw_hdr[:2] != _MAGIC:
+        raise ValueError('No hidden payload found')
+    length = int.from_bytes(raw_hdr[2:6], 'big')
+    total  = hdr_bits + length * 8
+    if total > len(samples):
+        raise ValueError('Payload length exceeds audio samples')
+    raw_pay = np.packbits(samples[:total].astype(np.uint8) & 1).tobytes()
+    return raw_pay[hdr_bytes:hdr_bytes + length]
 
+# ── Phase Coding ───────────────────────────────────────────────────────────────
 def _embed_phase(carrier_path: str, data: bytes, out_path: str):
     params, samples = _read_wav(carrier_path)
     mono    = samples if samples.ndim == 1 else samples[:, 0]
@@ -92,13 +134,15 @@ def _extract_phase(stego_path: str) -> bytes:
     for i in range(n_segs):
         fft = np.fft.rfft(mono[i * SEG_LEN:(i + 1) * SEG_LEN].astype(np.float64))
         bits.append(1 if np.angle(fft[len(fft) // 2]) > np.pi / 4 else 0)
-    hlen = (len(_MAGIC) + 4) * 8
+    hdr_bytes = len(_MAGIC) + 4 + 4
+    hlen = hdr_bytes * 8
     hdr  = bytes(int(''.join(str(b) for b in bits[i:i+8]), 2) for i in range(0, hlen, 8))
     if hdr[:2] != _MAGIC: raise ValueError('No hidden payload found')
     length = int.from_bytes(hdr[2:6], 'big')
     pbits  = bits[hlen:hlen + length * 8]
     return bytes(int(''.join(str(b) for b in pbits[i:i+8]), 2) for i in range(0, len(pbits), 8))
 
+# ── AAHE ───────────────────────────────────────────────────────────────────────
 def _blake2(data: bytes, size: int = 32) -> bytes:
     return hashlib.blake2b(data, digest_size=size).digest()
 
@@ -168,10 +212,11 @@ def _embed_aahe(carrier_path: str, data: bytes, out_path: str, key: str):
             stego[idx] = (s | plane) if bit else (s & ~plane)
     out_samples = samples.copy().astype(np.int64)
     lo, hi = (-32768, 32767) if params.sampwidth == 2 else (-(2**31), 2**31 - 1)
-    for ch in range(params.nchannels):
-        out_samples[:, ch] if samples.ndim > 1 else out_samples
-        if samples.ndim > 1: out_samples[:, ch] = np.clip(stego, lo, hi)
-        else: out_samples = np.clip(stego, lo, hi)
+    if samples.ndim > 1:
+        for ch in range(params.nchannels):
+            out_samples[:, ch] = np.clip(stego, lo, hi)
+    else:
+        out_samples = np.clip(stego, lo, hi)
     dtype = np.int16 if params.sampwidth == 2 else np.int32
     _write_wav(out_path, params, out_samples.astype(dtype))
 

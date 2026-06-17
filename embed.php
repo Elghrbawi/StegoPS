@@ -13,10 +13,10 @@ if($preCarrierId>0)$preCarrierFile=$db->fetchOne("SELECT f.* FROM media_files f 
 function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return round($b/1024,1).' KB';return round($b/1048576,2).' MB';}
 ?>
 <style>
-.steg-method-section{margin-top:10px}
-.steg-method-label{font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .sml-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block;animation:pulse-dot 1.8s ease-in-out infinite}
 @keyframes pulse-dot{0%,100%{opacity:.4;transform:scale(1)}50%{opacity:1;transform:scale(1.3)}}
+.steg-method-section{margin-top:10px}
+.steg-method-label{font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .steg-method-cards{display:flex;flex-direction:column;gap:6px}
 .steg-method-card{position:relative;display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);cursor:pointer;transition:border-color .18s,background .18s;background:var(--surface)}
 .steg-method-card:hover{border-color:var(--accent);background:rgba(0,229,200,.05)}
@@ -59,16 +59,8 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
 .pre-carrier-banner .pcb-size{color:var(--text-muted);white-space:nowrap}
 .pre-carrier-banner .pcb-clear{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:2px 4px;transition:color .2s}
 .pre-carrier-banner .pcb-clear:hover{color:var(--danger)}
-.img-payload-preview{max-width:100%;max-height:160px;object-fit:contain;border:1px solid var(--border);border-radius:8px;margin-top:8px;display:block}
-.payload-img-info{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:5px}
 .upload-zone{transition:border-color .15s,background .15s,transform .15s}
 .upload-zone.drag-over{border-color:var(--accent)!important;background:rgba(0,229,200,.13)!important;transform:scale(1.015)}
-.pm-file-info{font-family:'Space Mono',monospace;font-size:10px;color:var(--text-muted);padding:7px 10px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:7px;margin-top:8px;display:flex;align-items:center;gap:8px}
-.pm-file-info .pm-fi-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
-.pm-file-info .pm-fi-sz{white-space:nowrap;font-size:9px}
-.pm-file-info .pm-fi-clear{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:0 2px;transition:color .15s}
-.pm-file-info .pm-fi-clear:hover{color:var(--danger)}
-.method-note{font-family:'Space Mono',monospace;font-size:9px;color:var(--accent);padding:6px 10px;background:rgba(0,229,200,.06);border:1px solid rgba(0,229,200,.15);border-radius:6px;margin-bottom:8px;display:none}
 .steg-method-group{margin-bottom:10px}
 .steg-method-group:last-child{margin-bottom:0}
 .steg-method-group-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;padding:0 2px;display:flex;align-items:center;gap:6px}
@@ -77,7 +69,11 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
 .steg-method-group-label.img-in-img-group::before{background:#f472b6}
 .steg-method-group-label.image-group::before{background:var(--accent)}
 .steg-method-group-label.video-group::before{background:#fbbf24}
+.steg-method-group-label.text-group::before{background:#34d399}
 .steg-method-group+.steg-method-group{border-top:1px solid rgba(255,255,255,.05);padding-top:10px}
+.stego-text-result{background:rgba(0,0,0,.25);border:1px solid rgba(52,211,153,.2);border-radius:8px;padding:12px;margin-top:12px}
+.stego-text-result-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px}
+.stego-text-result-content{font-family:'JetBrains Mono',monospace;font-size:11px;color:#34d399;max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.5;padding:8px;background:rgba(0,0,0,.2);border-radius:6px}
 </style>
 <div class="page-header" style="margin-bottom:16px">
   <div><div class="page-title">Embed Payload</div><div class="page-sub">// ENCRYPT &rarr; HIDE INSIDE MEDIA</div></div>
@@ -89,6 +85,7 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
 </div>
 <div class="embed-layout" id="embed-layout">
   <div class="embed-left">
+    <!-- CARD 01: PAYLOAD -->
     <div class="card" id="card-payload">
       <div class="card-title">01 &mdash; Payload</div>
       <div class="media-tabs payload-tabs" style="margin-bottom:14px">
@@ -99,26 +96,27 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
           <div class="media-tab-icon">&#128206;</div><div class="media-tab-label">File / Image</div>
         </div>
       </div>
+      <!-- Text payload -->
       <div id="payload-text">
         <textarea name="payload_text" id="embed-payload" class="textarea" placeholder="Type your secret message here..." rows="6" oninput="persistEmbed()" style="resize:vertical"></textarea>
       </div>
+      <!-- File/Image payload — same design as carrier upload -->
       <div id="payload-file" style="display:none">
-        <div class="upload-zone carrier-drop-zone" id="pm-drop-zone" style="cursor:pointer" onclick="document.getElementById('payload-media-input').click()">
-          <div class="upload-icon" id="pm-icon">&#128206;</div>
-          <div class="upload-text" id="pm-upload-text">Click or drag file / image to hide</div>
-          <div class="upload-sub">Any file type &mdash; images unlock Image-in-Image steg</div>
+        <div class="carrier-upload-row" id="payload-upload-row">
+          <div class="upload-zone carrier-drop-zone" id="payload-drop-zone" onclick="document.getElementById('payload-media-input').click()">
+            <div class="upload-icon" id="payload-icon">&#128206;</div>
+            <div class="upload-text" id="payload-upload-text">Click or drag file / image to hide</div>
+            <div class="upload-sub">Any file type &mdash; images unlock Image-in-Image steg</div>
+          </div>
+          <div id="payload-preview" class="carrier-preview-panel" style="display:none"></div>
         </div>
-        <div id="pm-file-info" class="pm-file-info" style="display:none"></div>
-        <div id="pm-img-wrap" style="display:none;margin-top:8px">
-          <img id="pm-img-preview" class="img-payload-preview" src="" alt="">
-          <div class="payload-img-info" id="pm-img-info"></div>
-        </div>
-        <input type="file" id="payload-media-input" accept="image/*,audio/*,video/*,application/*,.pdf,.zip,.txt,.doc,.docx,.xls,.xlsx,*" style="display:none" onchange="handleMediaPayloadSelect(this);refreshStegMethods()">
+        <input type="file" id="payload-media-input" accept="*" style="display:none" onchange="handlePayloadSelect(this)">
       </div>
     </div>
+    <!-- CARD 02: CARRIER + STEG METHOD -->
     <div class="card" id="card-carrier">
       <div class="card-title">02 &mdash; Carrier Media &amp; Steg Method</div>
-      <div class="media-tabs">
+      <div class="media-tabs" id="carrier-tabs">
         <div class="media-tab active" id="mt-image" onclick="switchMedia('image')">
           <div class="media-tab-icon">&#128444;</div><div class="media-tab-label">Image</div>
         </div>
@@ -127,6 +125,9 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
         </div>
         <div class="media-tab" id="mt-video" onclick="switchMedia('video')">
           <div class="media-tab-icon">&#127916;</div><div class="media-tab-label">Video</div>
+        </div>
+        <div class="media-tab" id="mt-text" onclick="switchMedia('text')">
+          <div class="media-tab-icon">&#128084;</div><div class="media-tab-label">Text</div>
         </div>
       </div>
       <?php if($preCarrierFile):?>
@@ -149,18 +150,24 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
           </div>
           <div id="carrier-preview" class="carrier-preview-panel" style="display:none"></div>
         </div>
+        <!-- Text carrier cover text (hidden unless text tab selected) -->
+        <div id="cover-text-section" style="display:none;margin-top:12px">
+          <label class="input-label" style="margin-bottom:6px">Cover Text <span class="optional-tag">(innocent-looking text to hide payload inside)</span></label>
+          <textarea id="cover-text" class="textarea" placeholder="Paste or type your cover text here&#8230; The longer, the higher capacity." rows="5" style="resize:vertical"></textarea>
+          <div id="cover-text-cap" style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:4px"></div>
+        </div>
         <input type="file" id="carrier-input" style="display:none" onchange="onCarrierChange(this)" accept="image/*,audio/*,video/*">
         <input type="hidden" id="media-type-input" value="<?=$preCarrierFile?htmlspecialchars($preCarrierFile['file_type']):'image'?>">
         <input type="hidden" id="payload-type-input" value="text">
         <input type="hidden" id="steg-method-input" value="lsb">
         <div class="steg-method-section">
           <div class="steg-method-label"><span class="sml-dot"></span>Steganography Method</div>
-          <div id="steg-method-note" class="method-note"></div>
           <div class="steg-method-cards" id="steg-method-cards">
             <div class="steg-method-loading"><div class="sml-spinner"></div>Loading methods&hellip;</div>
           </div>
         </div>
     </div>
+    <!-- CARD 04: STEGO KEY -->
     <div class="card" id="card-stegokey">
       <div class="card-title">04 &mdash; Stego Key</div>
       <div class="input-group" style="margin-bottom:6px">
@@ -179,6 +186,7 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
     </div>
   </div>
   <div class="embed-right" id="embed-right">
+    <!-- CARD 03: ENCRYPTION CHAIN -->
     <div class="card" id="card-chain">
       <div class="card-title">03 &mdash; Encryption Chain</div>
       <?php if(!empty($chainsWithSteps)):?>
@@ -243,6 +251,17 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
         </div>
       </div>
       <div class="terminal-body" id="embed-term-body"></div>
+      <!-- Stego text output (text carrier only) -->
+      <div id="stego-text-reveal" style="display:none">
+        <div class="stego-text-result">
+          <div class="stego-text-result-label">&#9632; Stego Text &mdash; <span id="stego-text-overhead"></span></div>
+          <div class="stego-text-result-content" id="stego-text-content"></div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="copyStegoText()">&#11041; Copy Text</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadStegoText()">&#8595; Download .txt</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -257,48 +276,50 @@ const EMBED_URL='<?=SITE_URL?>/php/api/process_ajax.php';
 const USER_STEG_KEY='<?=$userSk?>';
 const IS_GUEST=<?=$isGuest?'true':'false'?>;
 let _engineOnline=false,_currentFileType='<?=$preCarrierFile?htmlspecialchars($preCarrierFile['file_type']):'image'?>',_selectedMethod='lsb';
+let _stegoTextOutput='';
+
+/* ── Steg method definitions (all algorithms from Python server) ─────── */
 const STEG_METHODS={
   image:[
-    {slug:'lsb',name:'LSB Injection',desc:'1-bit per RGB channel — highest capacity, lossless PNG output'},
-    {slug:'xor_pixel',name:'XOR Pixel',desc:'Key-stream XOR on LSBs — keyed, key-dependent extraction',special:true,badge:'special'},
-    {slug:'alpha',name:'Alpha Channel',desc:'Hidden in transparency layer — PNG only, zero visual change'},
-    {slug:'dct',name:'DCT Embed',desc:'Mid-frequency DCT coefficients — JPEG output, WhatsApp-resistant',special:true,badge:'dct'},
+    {slug:'lsb',      name:'LSB Injection',   desc:'1-bit per RGB channel — highest capacity, lossless PNG output'},
+    {slug:'xor_pixel',name:'XOR Pixel',        desc:'Key-stream XOR on LSBs — keyed, key-dependent extraction',special:true,badge:'special'},
+    {slug:'alpha',    name:'Alpha Channel',    desc:'Hidden in transparency layer — PNG only, zero visual change'},
+    {slug:'dct',      name:'DCT JPEG',         desc:'Mid-frequency DCT coefficients — JPEG output, WhatsApp-resistant',special:true,badge:'dct'},
   ],
-  image_in_image:[
-    {slug:'img_in_img',name:'Image-in-Image',desc:'4-bit nibble merge — embeds full image inside carrier, PNG output',special:true,badge:'special'},
+  img_in_img:[
+    {slug:'img_in_img',name:'Image-in-Image',  desc:'4-bit nibble merge — embeds any file (image/doc/zip) inside carrier, PNG output',special:true,badge:'special'},
   ],
   audio:[
-    {slug:'wav_lsb',name:'WAV LSB',desc:'Least-significant bit in PCM audio samples — inaudible, highest capacity'},
-    {slug:'phase',name:'Phase Coding',desc:'Encode payload in DFT phase segments — spectrally covert'},
-    {slug:'aahe',name:'AAHE',desc:'Adaptive audio hiding engine — psychoacoustic masking + keyed XOR',special:true,badge:'special'},
+    {slug:'wav_lsb',name:'WAV LSB',            desc:'Least-significant bit in PCM audio samples — inaudible, highest capacity'},
+    {slug:'phase',  name:'Phase Coding',       desc:'Encode payload in DFT phase segments — spectrally covert'},
+    {slug:'aahe',   name:'AAHE Adaptive',      desc:'Psychoacoustic masking + keyed scatter + 2nd-LSB QIM — most imperceptible',special:true,badge:'special'},
   ],
   video:[
-    {slug:'frame_lsb',name:'Frame LSB',desc:'LSB steganography across all video frames — high capacity'},
+    {slug:'frame_lsb',name:'Frame LSB',        desc:'LSB steganography across all video frames — very high capacity'},
+  ],
+  text:[
+    {slug:'zwsp',       name:'Zero-Width Space',   desc:'Invisible U+200B/C chars between words — survives copy-paste'},
+    {slug:'homoglyph',  name:'Homoglyph Swap',     desc:'Cyrillic/Greek lookalike substitution — visually identical letters'},
+    {slug:'unicode_tag',name:'Unicode Tag Block',  desc:'Invisible tag-block chars (U+E0000) — zero render footprint',special:true,badge:'special'},
+    {slug:'whitespace', name:'Whitespace Variant', desc:'SPACE vs NO-BREAK SPACE — pixel-perfect identical in every font'},
+    {slug:'combining',  name:'Combining Diacritics',desc:'CGJ + soft-hyphen after letters — invisible in all renderers'},
   ]
 };
+
 function _getMethods(fileType,payloadType){
-  if(fileType==='audio')return [{label:'Audio Steganography',cls:'audio-group',methods:STEG_METHODS.audio}];
-  if(fileType==='video')return [{label:'Video Steganography',cls:'video-group',methods:STEG_METHODS.video}];
-  if(payloadType==='file'||payloadType==='image'||payloadType==='media')return [
-    {label:'Image-in-Image',cls:'img-in-img-group',methods:STEG_METHODS.image_in_image},
+  if(fileType==='audio') return [{label:'Audio Steganography',cls:'audio-group',methods:STEG_METHODS.audio}];
+  if(fileType==='video') return [{label:'Video Steganography',cls:'video-group',methods:STEG_METHODS.video}];
+  if(fileType==='text')  return [{label:'Text Steganography',cls:'text-group',methods:STEG_METHODS.text}];
+  const isFilePay=(payloadType==='file'||payloadType==='media'||payloadType==='image');
+  if(isFilePay) return [
+    {label:'Image-in-Image (File Carrier)',cls:'img-in-img-group',methods:STEG_METHODS.img_in_img},
     {label:'Standard Image Methods',cls:'image-group',methods:STEG_METHODS.image},
   ];
   return [{label:'Image Steganography',cls:'image-group',methods:STEG_METHODS.image}];
 }
+
 function renderStegMethods(groups){
-  const c=document.getElementById('steg-method-cards');
-  const note=document.getElementById('steg-method-note');
-  if(!c)return;
-  const pt=document.getElementById('payload-type-input')?.value||'text';
-  if((pt==='file'||pt==='image'||pt==='media')&&_currentFileType==='image'){
-    note.style.display='block';
-    note.textContent='\u26a1 Image payload — Image-in-Image recommended; standard methods also available';
-  } else if(_currentFileType==='audio'){
-    note.style.display='block';
-    note.textContent='\ud83c\udfb5 Audio carrier — WAV required; AAHE is most covert';
-  } else {
-    note.style.display='none';
-  }
+  const c=document.getElementById('steg-method-cards');if(!c)return;
   const allMethods=groups.flatMap(g=>g.methods||[]);
   if(!allMethods.length){c.innerHTML='<div class="steg-method-loading" style="color:var(--warning)">No methods available.</div>';return;}
   const keepSlug=allMethods.some(m=>m.slug===_selectedMethod)?_selectedMethod:allMethods[0].slug;
@@ -327,9 +348,11 @@ function renderStegMethods(groups){
     gDiv.appendChild(wrap);c.appendChild(gDiv);
   });
 }
+
 function refreshStegMethods(){
   renderStegMethods(_getMethods(_currentFileType,document.getElementById('payload-type-input')?.value||'text'));
 }
+
 async function pingEngine(){
   const dot=document.getElementById('engine-dot'),txt=document.getElementById('engine-status-txt');
   dot.className='engine-dot';txt.textContent='Pinging engine\u2026';
@@ -342,43 +365,43 @@ async function pingEngine(){
     else throw new Error(d.message||'fail');
   }catch(e){_engineOnline=false;dot.className='engine-dot offline';txt.textContent='Engine offline \u2014 static methods active';}
 }
-function handleMediaPayloadSelect(input){
+
+/* ── Payload file upload — copies carrier panel design ─────────────── */
+function handlePayloadSelect(input){
   const file=input?.files?.[0];if(!file)return;
-  const isImg=file.type.startsWith('image/');
-  const sz=file.size>1048576?(file.size/1048576).toFixed(2)+' MB':(file.size/1024).toFixed(1)+' KB';
-  document.getElementById('pm-icon').textContent=isImg?'\uD83D\uDDBC':'\uD83D\uDCC4';
-  document.getElementById('pm-upload-text').textContent=isImg?'Image ready — drag to replace':'File ready — drag to replace';
-  const fi=document.getElementById('pm-file-info');
-  fi.style.display='flex';
-  fi.innerHTML='<span class="pm-fi-name">'+file.name+'</span><span class="pm-fi-sz">'+sz+'</span><button class="pm-fi-clear" onclick="clearPayloadMedia()" title="Remove">\u2715</button>';
-  const wrap=document.getElementById('pm-img-wrap'),img=document.getElementById('pm-img-preview');
-  if(isImg){img.src=URL.createObjectURL(file);img.onload=()=>{document.getElementById('pm-img-info').textContent=img.naturalWidth+'\xd7'+img.naturalHeight+'px';};wrap.style.display='block';}
-  else wrap.style.display='none';
-}
-function clearPayloadMedia(){
-  document.getElementById('payload-media-input').value='';
-  document.getElementById('pm-file-info').style.display='none';
-  document.getElementById('pm-img-wrap').style.display='none';
-  document.getElementById('pm-icon').textContent='\uD83D\uDCC4';
-  document.getElementById('pm-upload-text').textContent='Click or drag file / image to hide';
+  handleCarrierSelect(input,'payload-preview');
+  document.getElementById('payload-icon').textContent=file.type.startsWith('image/')?'\uD83D\uDDBC':'\uD83D\uDCC4';
+  document.getElementById('payload-upload-text').textContent='File ready \u2014 drag to replace';
   refreshStegMethods();
 }
+
+function clearPayloadMedia(){
+  document.getElementById('payload-media-input').value='';
+  const pp=document.getElementById('payload-preview');if(pp){pp.style.display='none';pp.innerHTML='';}
+  document.getElementById('payload-icon').textContent='\uD83D\uDCC4';
+  document.getElementById('payload-upload-text').textContent='Click or drag file / image to hide';
+  refreshStegMethods();
+}
+
 function onCarrierChange(input){
   const f=input?.files?.[0];
   if(f){
     const type=f.type.startsWith('audio/')?'audio':f.type.startsWith('video/')?'video':'image';
     _currentFileType=type;
     document.getElementById('media-type-input').value=type;
-    ['image','audio','video'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
+    ['image','audio','video','text'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
   }
   handleCarrierSelect(input,'carrier-preview');
   refreshStegMethods();
 }
+
 function clearPreCarrier(){
   document.getElementById('pre-carrier-banner')?.remove();
   const inp=document.getElementById('pre-carrier-file-id');if(inp)inp.value='';
   const row=document.getElementById('carrier-upload-row');if(row)row.style.display='flex';
 }
+
+/* ── Terminal helpers ────────────────────────────────────────────────── */
 function _termDivider(b){addTermLine(b,'divider','\u2500'.repeat(41));}
 function _termMetric(b,label,value,pct,color){
   const bar=document.createElement('div');bar.className='t-analysis-bar';
@@ -395,44 +418,65 @@ function _termAnimateScan(b,label,count,delay,cb){
     if(i>=count){clearInterval(iv);if(cb)setTimeout(cb,delay);}
   },delay);
 }
+
 function loadSavedChainEmbed(key){
   if(!key)return;
   try{const dec=JSON.parse(atob(key));chain=dec.map(s=>({slug:s[0],name:s[1],category:s[2],key:s[3]||'',key2:s[4]||''}));renderChain();showToast('Chain loaded \u2014 '+chain.length+' layers');}
   catch(e){showToast('Failed to load chain');}
 }
-function persistEmbed(){try{localStorage.setItem('embed_payload',document.getElementById('embed-payload')?.value||'');localStorage.setItem('embed_stego_key',document.getElementById('embed-stego-key')?.value||'');}catch(e){}}
-function restoreEmbed(){try{const p=localStorage.getItem('embed_payload');const k=localStorage.getItem('embed_stego_key');if(p)document.getElementById('embed-payload').value=p;if(k)document.getElementById('embed-stego-key').value=k;}catch(e){}}
-function _getPayloadFile(){const pt=document.getElementById('payload-type-input')?.value||'text';return(pt==='file'||pt==='media'||pt==='image')?document.getElementById('payload-media-input')?.files?.[0]||null:null;}
+
+function persistEmbed(){
+  try{localStorage.setItem('embed_payload',document.getElementById('embed-payload')?.value||'');localStorage.setItem('embed_stego_key',document.getElementById('embed-stego-key')?.value||'');}catch(e){}
+}
+function restoreEmbed(){
+  try{const p=localStorage.getItem('embed_payload');const k=localStorage.getItem('embed_stego_key');
+  if(p)document.getElementById('embed-payload').value=p;if(k)document.getElementById('embed-stego-key').value=k;}catch(e){}
+}
+
+function copyStegoText(){if(_stegoTextOutput)navigator.clipboard.writeText(_stegoTextOutput).then(()=>showToast('Stego text copied!'));}
+function downloadStegoText(){
+  if(!_stegoTextOutput)return;
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([_stegoTextOutput],{type:'text/plain'}));a.download='stego_output.txt';a.click();
+}
+
+/* ── Main embed function ─────────────────────────────────────────────── */
 function runEmbed(){
   const payloadText=document.getElementById('embed-payload')?.value||'';
   const payloadType=document.getElementById('payload-type-input')?.value||'text';
-  const payloadFile=_getPayloadFile();
+  const payloadFile=payloadType!=='text'?document.getElementById('payload-media-input')?.files?.[0]||null:null;
   const stegoKey=document.getElementById('embed-stego-key')?.value||'';
   const carrierFile=document.getElementById('carrier-input')?.files[0];
   const preCarrierId=document.getElementById('pre-carrier-file-id')?.value||'';
   const stegMethod=document.getElementById('steg-method-input')?.value||_selectedMethod||'lsb';
+  const isTextCarrier=(_currentFileType==='text');
+  const coverText=document.getElementById('cover-text')?.value||'';
   const btn=document.getElementById('embed-btn');
-  if(!carrierFile&&!preCarrierId){showStegError('Upload a carrier file first');return;}
+
+  if(!isTextCarrier&&!carrierFile&&!preCarrierId){showStegError('Upload a carrier file first');return;}
+  if(isTextCarrier&&!coverText.trim()){showStegError('Enter cover text for text steganography');return;}
   if(payloadType==='text'&&!payloadText){showStegError('Enter a payload message');return;}
-  if(payloadType!=='text'&&!payloadFile){showStegError('Select a payload file or image first');return;}
+  if(payloadType!=='text'&&!payloadFile){showStegError('Select a payload file first');return;}
   if(!stegoKey){showStegError('Enter your stego key');return;}
+
   setLoading(btn,true);if(btn._setProc)btn._setProc(true);
   showTerminal('embed-terminal');
   const tb=document.getElementById('embed-term-body');
+  document.getElementById('stego-text-reveal').style.display='none';
   const hasCrypto=chain.some(s=>['symmetric','asymmetric','classical'].includes(s.category));
   const payloadBytes=payloadType!=='text'?(payloadFile?.size||0):new TextEncoder().encode(payloadText).length;
-  const carrierSizeKB=preCarrierId?'?':((carrierFile?.size||0)/1024).toFixed(1);
+  const carrierSizeKB=isTextCarrier?Math.round(coverText.length/10):preCarrierId?'?':((carrierFile?.size||0)/1024).toFixed(1);
+
   animateTerminal(tb,['Initializing StegoPS secure session\u2026','Authenticating credentials\u2026','Connecting to Python engine\u2026'],()=>{
     addTermLine(tb,_engineOnline?'success':'warn',(_engineOnline?'\u2713 Engine online':'\u26a0 Engine unknown')+' \u2014 proceeding\u2026');
     _termDivider(tb);
-    addTermLine(tb,'server','> Carrier: '+(preCarrierId?'Pre-loaded #'+preCarrierId:(carrierFile?.name||'?')));
+    addTermLine(tb,'server','> Carrier: '+(isTextCarrier?'Text cover ('+coverText.length+' chars)':preCarrierId?'Pre-loaded #'+preCarrierId:(carrierFile?.name||'?')));
     addTermLine(tb,'','> Payload: '+payloadType.toUpperCase()+' / > Method: '+stegMethod.toUpperCase().replace(/_/g,' '));
-    if(!preCarrierId)_termMetric(tb,'Carrier',carrierSizeKB+' KB',Math.min(100,(carrierFile?.size||0)/1024/10),'#60a5fa');
+    if(!isTextCarrier&&!preCarrierId)_termMetric(tb,'Carrier',carrierSizeKB+' KB',Math.min(100,(carrierFile?.size||0)/1024/10),'#60a5fa');
     setTimeout(()=>{
       _termAnimateScan(tb,'SCAN',4,80,()=>{
-        const estCapKB=preCarrierId?'?':Math.floor((carrierFile?.size||0)*0.04/1024);
-        if(!preCarrierId)_termMetric(tb,'Capacity',estCapKB+' KB',60,'#34d399');
-        _termMetric(tb,'Payload',payloadBytes+' B',Math.min(100,payloadBytes/(estCapKB>0?estCapKB*1024:1024)*100),'#fbbf24');
+        const estCapKB=isTextCarrier?Math.round(coverText.length/80):preCarrierId?'?':Math.floor((carrierFile?.size||0)*0.04/1024);
+        if(!isTextCarrier&&!preCarrierId)_termMetric(tb,'Capacity',estCapKB+' KB',60,'#34d399');
+        _termMetric(tb,'Payload',payloadBytes+' B',Math.min(100,payloadBytes/((typeof estCapKB==='number'&&estCapKB>0)?estCapKB*1024:1024)*100),'#fbbf24');
         _termDivider(tb);
         if(chain.length>0){
           addTermLine(tb,'server','> Pipeline \u2014 '+chain.length+' layer'+(chain.length>1?'s':''));
@@ -444,31 +488,51 @@ function runEmbed(){
           addTermLine(tb,'server','> Applying '+stegMethod.toUpperCase().replace(/_/g,' ')+'\u2026');
           _termAnimateScan(tb,'EMBED',5,70,()=>{
             const fd=new FormData();
-            fd.append('action','embed');
-            if(payloadType!=='text')fd.append('payload_media',payloadFile);
-            else fd.append('payload_text',payloadText);
-            fd.append('stego_key',stegoKey);fd.append('steg_method',stegMethod);
+            if(isTextCarrier){
+              fd.append('action','embed');
+              fd.append('payload_type','text_steg');
+              fd.append('cover_text',coverText);
+              fd.append('payload_text',payloadType==='text'?payloadText:'');
+              if(payloadType!=='text'&&payloadFile)fd.append('payload_media',payloadFile);
+            } else {
+              fd.append('action','embed');
+              if(payloadType!=='text')fd.append('payload_media',payloadFile);
+              else fd.append('payload_text',payloadText);
+              fd.append('media_type',_currentFileType);
+              if(preCarrierId)fd.append('carrier_file_id',preCarrierId);
+              else fd.append('carrier',carrierFile);
+            }
+            fd.append('stego_key',stegoKey);
+            fd.append('steg_method',stegMethod);
             fd.append('chain_data',JSON.stringify(chain));
-            fd.append('media_type',document.getElementById('media-type-input').value);
-            fd.append('payload_type',payloadType!=='text'?'media':payloadType);
-            if(preCarrierId)fd.append('carrier_file_id',preCarrierId);
-            else fd.append('carrier',carrierFile);
+            fd.append('payload_type',isTextCarrier?'text_steg':payloadType!=='text'?'media':payloadType);
+
             fetch(EMBED_URL,{method:'POST',body:fd})
               .then(r=>{if(!r.headers.get('content-type')?.includes('json'))return r.text().then(t=>{throw new Error('Server error: '+t.substring(0,200));});return r.json();})
               .then(d=>{
                 setLoading(btn,false);_termDivider(tb);
                 if(d.success){
                   if(btn._flashOk)btn._flashOk();
-                  addTermLine(tb,'success','\u2713 COMPLETE \u2014 #'+d.op_id);
-                  _termMetric(tb,'In',((d.carrier_size||0)/1024).toFixed(1)+' KB',70,'#60a5fa');
-                  _termMetric(tb,'Out',((d.output_size||0)/1024).toFixed(1)+' KB',72,'#00e5c8');
-                  if(d.fallback_note)addTermLine(tb,'warn','\u26a0 '+d.fallback_note);
-                  if(IS_GUEST){
-                    addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a>');
+                  if(d.stego_text){
+                    // Text carrier output
+                    _stegoTextOutput=d.stego_text;
+                    addTermLine(tb,'success','\u2713 TEXT EMBED COMPLETE \u2014 '+(d.overhead_chars||0)+' invisible chars added');
+                    document.getElementById('stego-text-reveal').style.display='block';
+                    document.getElementById('stego-text-content').textContent=d.stego_text;
+                    document.getElementById('stego-text-overhead').textContent=(d.overhead_chars||0)+' invisible chars added';
                   } else {
-                    addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a> &nbsp; <a href="<?=SITE_URL?>/share.php?op='+d.op_id+'" style="color:#a78bfa">&#11041; Share</a>');
+                    // File carrier output
+                    addTermLine(tb,'success','\u2713 COMPLETE \u2014 #'+d.op_id);
+                    _termMetric(tb,'In',((d.carrier_size||0)/1024).toFixed(1)+' KB',70,'#60a5fa');
+                    _termMetric(tb,'Out',((d.output_size||0)/1024).toFixed(1)+' KB',72,'#00e5c8');
+                    if(d.fallback_note)addTermLine(tb,'warn','\u26a0 '+d.fallback_note);
+                    if(IS_GUEST){
+                      addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a>');
+                    } else {
+                      addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a> &nbsp; <a href="<?=SITE_URL?>/share.php?op='+d.op_id+'" style="color:#a78bfa">&#11041; Share</a>');
+                    }
+                    localStorage.removeItem('embed_payload');
                   }
-                  localStorage.removeItem('embed_payload');
                 } else {
                   if(btn._flashErr)btn._flashErr();else setLoading(btn,false);
                   addTermLine(tb,'err','\u2717 '+d.message);showStegError(d.message);
@@ -481,7 +545,8 @@ function runEmbed(){
     },200);
   });
 }
-function initDrop(zone,input){
+
+function initDrop(zone,input,cb){
   if(!zone||!input)return;
   ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();e.dataTransfer&&(e.dataTransfer.dropEffect='copy');zone.classList.add('drag-over');}));
   ['dragleave','dragend'].forEach(ev=>zone.addEventListener(ev,e=>{if(ev==='dragleave'&&zone.contains(e.relatedTarget))return;zone.classList.remove('drag-over');}));
@@ -490,58 +555,43 @@ function initDrop(zone,input){
     const f=e.dataTransfer.files[0];if(!f)return;
     try{const dt=new DataTransfer();dt.items.add(f);input.files=dt.files;}catch(ex){}
     input.dispatchEvent(new Event('change',{bubbles:true}));
+    if(cb)cb(f);
   });
 }
+
 const _mediaInfo={
   image:{icon:'\uD83D\uDDBC',sub:'PNG, JPG, BMP supported',technique:'LSB / DCT / Alpha / Image-in-Image',accept:'image/*'},
   audio:{icon:'\uD83C\uDFB5',sub:'WAV required for all audio methods',technique:'WAV LSB / Phase Coding / AAHE',accept:'audio/wav,audio/*'},
-  video:{icon:'\uD83C\uDFA6',sub:'MP4, AVI supported',technique:'Frame LSB Steganography',accept:'video/*'}
+  video:{icon:'\uD83C\uDFA6',sub:'MP4, AVI supported',technique:'Frame LSB Steganography',accept:'video/*'},
+  text: {icon:'\uD83D\uDCC4',sub:'Paste cover text below',technique:'Zero-Width / Homoglyph / Unicode Tag',accept:''}
 };
-const _termNodes={};
+
 window.addEventListener('DOMContentLoaded',()=>{
   restoreEmbed();renderChain();pingEngine();refreshStegMethods();
   initDrop(document.querySelector('#carrier-upload-row .upload-zone'),document.getElementById('carrier-input'));
-  initDrop(document.getElementById('pm-drop-zone'),document.getElementById('payload-media-input'));
+  initDrop(document.getElementById('payload-drop-zone'),document.getElementById('payload-media-input'));
+
   const _origSPT=window.switchPayloadType;
-  window.switchPayloadType=function(type){_origSPT&&_origSPT(type);refreshStegMethods();};
+  window.switchPayloadType=function(type){
+    _origSPT&&_origSPT(type);
+    refreshStegMethods();
+  };
+
   window.switchMedia=function(type){
-    ['image','audio','video'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
+    ['image','audio','video','text'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
     const m=_mediaInfo[type]||_mediaInfo.image;
     document.getElementById('carrier-icon').textContent=m.icon;
     document.getElementById('carrier-sub').textContent=m.sub;
     document.getElementById('carrier-technique').textContent=m.technique;
     document.getElementById('media-type-input').value=type;
-    const ci=document.getElementById('carrier-input');if(ci)ci.accept=m.accept;
+    const ci=document.getElementById('carrier-input');if(ci)ci.accept=m.accept||'image/*';
     const cp=document.getElementById('carrier-preview');if(cp){cp.style.display='none';cp.innerHTML='';}
+    // Show/hide file upload vs cover text
+    const isText=(type==='text');
+    const row=document.getElementById('carrier-upload-row');if(row)row.style.display=isText?'none':'flex';
+    document.getElementById('cover-text-section').style.display=isText?'block':'none';
     _currentFileType=type;
     refreshStegMethods();
-  };
-  const _origMax=window.termMaximize,_origRestore=window.termRestore,_origRestoreInstant=window._termRestoreInstant;
-  window.termMaximize=function(id){
-    const term=document.getElementById(id);if(!term)return;
-    if(!term.classList.contains('terminal-maximized')){
-      _termNodes[id]={parent:term.parentNode,next:term.nextSibling};
-      document.body.appendChild(term);
-    }
-    _origMax&&_origMax(id);
-  };
-  window.termRestore=function(id){
-    _origRestore&&_origRestore(id);
-    const info=_termNodes[id];
-    if(info){setTimeout(()=>{
-      const term=document.getElementById(id);if(!term)return;
-      info.next&&info.next.parentNode===info.parent?info.parent.insertBefore(term,info.next):info.parent.appendChild(term);
-      delete _termNodes[id];
-    },260);}
-  };
-  window._termRestoreInstant=function(id){
-    _origRestoreInstant&&_origRestoreInstant(id);
-    const info=_termNodes[id];
-    if(info){
-      const term=document.getElementById(id);if(!term)return;
-      info.next&&info.next.parentNode===info.parent?info.parent.insertBefore(term,info.next):info.parent.appendChild(term);
-      delete _termNodes[id];
-    }
   };
 });
 </script>
