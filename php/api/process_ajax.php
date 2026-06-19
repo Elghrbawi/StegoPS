@@ -96,8 +96,7 @@ try {
     if ($action === 'capacity') {
         echo json_encode($handler->getCapacity(
             (int)($_POST['carrier_file_id'] ?? 0), $uid,
-            $_POST['steg_method'] ?? 'lsb',
-            $_POST['cover_text']  ?? ''
+            $_POST['steg_method'] ?? 'lsb'
         ));
         exit;
     }
@@ -127,14 +126,6 @@ try {
                 }
                 $pType = 'media'; // normalise
                 break;
-
-            case 'text_steg': // text-in-text — handled by /api/text/embed
-                $coverText = $_POST['cover_text'] ?? '';
-                $payload   = $_POST['payload_text'] ?? '';
-                if (trim($coverText) === '') { echo json_encode(['success'=>false,'message'=>'Cover text is required for text steg.']); exit; }
-                if (trim($payload)   === '') { echo json_encode(['success'=>false,'message'=>'Payload text cannot be empty.']); exit; }
-                echo json_encode($handler->embedText($uid, $coverText, $payload, $stegoKey, $stegMeth, $chainRaw));
-                exit;
 
             default: // 'text'
                 $payload = $_POST['payload_text'] ?? '';
@@ -169,14 +160,6 @@ try {
         $errMsg   = '';
 
         if (empty($stegoKey)) { echo json_encode(['success'=>false,'message'=>'Stego key is required.']); exit; }
-
-        // Text extraction — stego_text in POST body
-        if (in_array($stegMeth, ['zwsp','homoglyph','unicode_tag','whitespace','combining'], true)) {
-            $stegoText = $_POST['stego_text'] ?? '';
-            if (!$stegoText) { echo json_encode(['success'=>false,'message'=>'stego_text is required for text steg.']); exit; }
-            echo json_encode($handler->extractText($uid, $stegoText, $stegoKey, $stegMeth, $chainRaw));
-            exit;
-        }
 
         $stego = resolveStego($handler, $uid, $errMsg);
         if (!$stego) { echo json_encode(['success'=>false,'message'=>$errMsg]); exit; }
@@ -220,4 +203,4 @@ try {
     ob_clean();
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['success'=>false,'message'=>'Server error: '.$e->getMessage()]);
-}
+}

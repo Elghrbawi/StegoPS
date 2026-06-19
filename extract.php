@@ -54,29 +54,19 @@ function fmtSzEx(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return r
 .payload-reveal-content{font-family:'JetBrains Mono',monospace;font-size:11px;color:#34d399;background:rgba(0,0,0,.3);padding:10px;border-radius:6px;border:1px solid rgba(52,211,153,.2);max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.5}
 .payload-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .payload-meta{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-bottom:8px}
-.steg-type-tab{display:flex;gap:4px;margin-bottom:12px}
-.steg-type-btn{flex:1;padding:6px 10px;font-family:'Space Mono',monospace;font-size:10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;text-align:center;transition:all .18s}
-.steg-type-btn:hover{border-color:#c084fc;color:var(--text)}
-.steg-type-btn.active{border-color:#c084fc;background:rgba(192,132,252,.1);color:#c084fc}
 .steg-method-group{margin-bottom:10px}
 .steg-method-group:last-child{margin-bottom:0}
 .steg-method-group-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;padding:0 2px;display:flex;align-items:center;gap:6px}
 .steg-method-group-label::before{content:'';display:inline-block;width:3px;height:10px;border-radius:2px;background:#c084fc;flex-shrink:0}
-.steg-method-group-label.text-group::before{background:#34d399}
 </style>
 <div class="page-header" style="margin-bottom:16px">
   <div><div class="page-title">Extract Payload</div><div class="page-sub">// UPLOAD STEGO FILE &rarr; DECODE &rarr; REVEAL</div></div>
 </div>
 <div class="embed-layout extract-layout" id="extract-layout">
   <div class="embed-left">
-    <!-- CARD 01: STEGO FILE / TEXT -->
+    <!-- CARD 01: STEGO FILE -->
     <div class="card" id="card-stego-upload">
       <div class="card-title">01 &mdash; Stego File</div>
-      <!-- Carrier type tabs -->
-      <div class="steg-type-tab" id="stego-type-tabs">
-        <button class="steg-type-btn active" id="stt-media" onclick="switchStegoType('media')">&#9673; Media File</button>
-        <button class="steg-type-btn" id="stt-text" onclick="switchStegoType('text')">&#128084; Text Steg</button>
-      </div>
       <!-- Media stego file upload -->
       <div id="stego-media-section">
         <?php if($preFile):?>
@@ -96,17 +86,11 @@ function fmtSzEx(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return r
             <div class="upload-zone carrier-drop-zone" onclick="document.getElementById('stego-input').click()">
               <div class="upload-icon">&#9673;</div>
               <div class="upload-text">Click or drag stego file</div>
-              <div class="upload-sub">PNG / JPG / WAV / AVI / MP4 &mdash; file with hidden payload</div>
+              <div class="upload-sub">PNG / JPG / WAV &mdash; file with hidden payload</div>
             </div>
             <div id="stego-preview" class="carrier-preview-panel" style="display:none"></div>
           </div>
-          <input type="file" id="stego-input" style="display:none" onchange="handleCarrierSelect(this,'stego-preview');onStegoFileSelected(this)" accept="image/*,audio/*,video/*">
-      </div>
-      <!-- Text stego input -->
-      <div id="stego-text-section" style="display:none">
-        <label class="input-label" style="margin-bottom:6px">Paste Stego Text <span class="optional-tag">(text containing hidden payload)</span></label>
-        <textarea id="stego-text-input" class="textarea" placeholder="Paste your stego text here&#8230;" rows="6" style="resize:vertical" oninput="onStegoTextInput()"></textarea>
-        <div id="stego-text-status" style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:4px"></div>
+          <input type="file" id="stego-input" style="display:none" onchange="handleCarrierSelect(this,'stego-preview');onStegoFileSelected(this)" accept="image/*,audio/*">
       </div>
     </div>
     <!-- CARD 02: STEG METHOD -->
@@ -223,9 +207,8 @@ function fmtSzEx(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return r
 <script>
 const EXTRACT_URL='<?=SITE_URL?>/php/api/process_ajax.php';
 const USER_STEG_KEY='<?=$userSk?>';
-let _extractFileType='<?=htmlspecialchars($preFile['file_type']??'')?>'; // 'image','audio','video','text',''
+let _extractFileType='<?=htmlspecialchars($preFile['file_type']??'')?>'; // 'image','audio',''
 let _extractSelectedMethod='<?=htmlspecialchars($preOp['stego_technique']??'lsb')?>';
-let _extractStegoType='media'; // 'media' or 'text'
 let extractedPayload='',extractedBlob=null;
 
 /* ── All steg methods from Python server ────────────────────────────── */
@@ -236,22 +219,13 @@ const EXTRACT_METHODS={
     {slug:'alpha',     name:'Alpha Channel',    desc:'Extract from PNG alpha transparency layer'},
     {slug:'img_in_img',name:'Image-in-Image',   desc:'Recover any file payload from 4-bit nibble merge',special:true,badge:'special'},
     {slug:'dct',       name:'DCT JPEG',         desc:'Recover from DCT coefficients — for DCT-embedded files',special:true,badge:'dct'},
+    {slug:'pixel_vault',name:'Pixel Vault',desc:'Recover payload from hidden pixel rows beyond the declared height — key-seeded unshuffle + XOR-decrypt',special:true,badge:'special'},
   ],
   audio:[
     {slug:'wav_lsb',name:'WAV LSB',             desc:'Recover payload from audio PCM sample LSBs'},
     {slug:'phase',  name:'Phase Coding',        desc:'Recover payload from DFT phase segments'},
     {slug:'aahe',   name:'AAHE Adaptive',       desc:'Adaptive audio hiding engine — keyed scatter + psychoacoustic masking',special:true,badge:'special'},
   ],
-  video:[
-    {slug:'frame_lsb',name:'Frame LSB',         desc:'Recover payload from per-frame LSB data across all frames'},
-  ],
-  text:[
-    {slug:'zwsp',       name:'Zero-Width Space',    desc:'Extract from invisible U+200B/C chars between words'},
-    {slug:'homoglyph',  name:'Homoglyph Swap',      desc:'Detect Cyrillic/Greek lookalike substitutions'},
-    {slug:'unicode_tag',name:'Unicode Tag Block',   desc:'Extract from invisible tag-block chars (U+E0000)',special:true,badge:'special'},
-    {slug:'whitespace', name:'Whitespace Variant',  desc:'SPACE vs NO-BREAK SPACE encoding'},
-    {slug:'combining',  name:'Combining Diacritics',desc:'CGJ + soft-hyphen after letters'},
-  ]
 };
 
 function renderExtractMethods(type,preMethod){
@@ -274,31 +248,10 @@ function renderExtractMethods(type,preMethod){
   });
 }
 
-function switchStegoType(type){
-  _extractStegoType=type;
-  document.getElementById('stt-media').classList.toggle('active',type==='media');
-  document.getElementById('stt-text').classList.toggle('active',type==='text');
-  document.getElementById('stego-media-section').style.display=type==='media'?'block':'none';
-  document.getElementById('stego-text-section').style.display=type==='text'?'block':'none';
-  if(type==='text'){
-    _extractFileType='text';
-    renderExtractMethods('text',null);
-  } else {
-    _extractFileType='';
-    document.getElementById('extract-method-cards').innerHTML='<div class="steg-method-placeholder">&#11025; Upload a stego file to see methods</div>';
-  }
-}
-
 function onStegoFileSelected(input){
   const file=input?.files?.[0];if(!file)return;
-  _extractFileType=file.type.startsWith('audio/')?'audio':file.type.startsWith('video/')?'video':'image';
+  _extractFileType=file.type.startsWith('audio/')?'audio':'image';
   renderExtractMethods(_extractFileType,null);
-}
-
-function onStegoTextInput(){
-  const txt=document.getElementById('stego-text-input')?.value||'';
-  const st=document.getElementById('stego-text-status');
-  if(st)st.textContent=txt.length?txt.length+' characters pasted':'';
 }
 
 function clearPreFile(){
@@ -388,12 +341,9 @@ function runExtract(){
   const stegoFile=document.getElementById('stego-input')?.files[0];
   const preFileId=document.getElementById('pre-stego-file-id')?.value||'';
   const stegMethod=document.getElementById('extract-steg-method-input')?.value||_extractSelectedMethod||'lsb';
-  const stegoText=document.getElementById('stego-text-input')?.value||'';
   const btn=document.getElementById('extract-btn');
-  const isTextSteg=(_extractStegoType==='text');
 
-  if(!isTextSteg&&!stegoFile&&!preFileId){showStegError('Upload a stego file first');return;}
-  if(isTextSteg&&!stegoText.trim()){showStegError('Paste the stego text first');return;}
+  if(!stegoFile&&!preFileId){showStegError('Upload a stego file first');return;}
   if(!stegoKey){showStegError('Enter the stego key');return;}
 
   setLoading(btn,true);if(btn._setProc)btn._setProc(true);
@@ -403,7 +353,7 @@ function runExtract(){
 
   const steps=[
     'Initializing decryption session\u2026',
-    'Loading stego '+(isTextSteg?'text':'file: '+(stegoFile?.name||'pre-loaded #'+preFileId)),
+    'Loading stego file: '+(stegoFile?.name||'pre-loaded #'+preFileId),
     'Detecting steganography: '+stegMethod.toUpperCase().replace(/_/g,' '),
     'Locating hidden payload region\u2026',
     chain.length>0?('Reversing chain \u2014 '+chain.length+' layer'+(chain.length>1?'s':'')+'\u2026'):('No chain \u2014 expecting raw payload\u2026'),
@@ -417,12 +367,8 @@ function runExtract(){
     fd.append('stego_key',stegoKey);
     fd.append('chain_data',JSON.stringify(chain));
     fd.append('steg_method',stegMethod);
-    if(isTextSteg){
-      fd.append('stego_text',stegoText);
-    } else {
-      if(preFileId)fd.append('stego_file_id',preFileId);
-      else fd.append('stego_file',stegoFile);
-    }
+    if(preFileId)fd.append('stego_file_id',preFileId);
+    else fd.append('stego_file',stegoFile);
 
     fetch(EXTRACT_URL,{method:'POST',body:fd})
       .then(r=>{if(!r.headers.get('content-type')?.includes('json'))return r.text().then(t=>{throw new Error('Server error ('+r.status+'): '+t.substring(0,120));});return r.json();})

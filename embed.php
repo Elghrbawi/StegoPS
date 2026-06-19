@@ -68,12 +68,7 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
 .steg-method-group-label.audio-group::before{background:#a78bfa}
 .steg-method-group-label.img-in-img-group::before{background:#f472b6}
 .steg-method-group-label.image-group::before{background:var(--accent)}
-.steg-method-group-label.video-group::before{background:#fbbf24}
-.steg-method-group-label.text-group::before{background:#34d399}
 .steg-method-group+.steg-method-group{border-top:1px solid rgba(255,255,255,.05);padding-top:10px}
-.stego-text-result{background:rgba(0,0,0,.25);border:1px solid rgba(52,211,153,.2);border-radius:8px;padding:12px;margin-top:12px}
-.stego-text-result-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px}
-.stego-text-result-content{font-family:'JetBrains Mono',monospace;font-size:11px;color:#34d399;max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.5;padding:8px;background:rgba(0,0,0,.2);border-radius:6px}
 </style>
 <div class="page-header" style="margin-bottom:16px">
   <div><div class="page-title">Embed Payload</div><div class="page-sub">// ENCRYPT &rarr; HIDE INSIDE MEDIA</div></div>
@@ -123,12 +118,6 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
         <div class="media-tab" id="mt-audio" onclick="switchMedia('audio')">
           <div class="media-tab-icon">&#127925;</div><div class="media-tab-label">Audio</div>
         </div>
-        <div class="media-tab" id="mt-video" onclick="switchMedia('video')">
-          <div class="media-tab-icon">&#127916;</div><div class="media-tab-label">Video</div>
-        </div>
-        <div class="media-tab" id="mt-text" onclick="switchMedia('text')">
-          <div class="media-tab-icon">&#128084;</div><div class="media-tab-label">Text</div>
-        </div>
       </div>
       <?php if($preCarrierFile):?>
         <div class="pre-carrier-banner" id="pre-carrier-banner">
@@ -150,13 +139,7 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
           </div>
           <div id="carrier-preview" class="carrier-preview-panel" style="display:none"></div>
         </div>
-        <!-- Text carrier cover text (hidden unless text tab selected) -->
-        <div id="cover-text-section" style="display:none;margin-top:12px">
-          <label class="input-label" style="margin-bottom:6px">Cover Text <span class="optional-tag">(innocent-looking text to hide payload inside)</span></label>
-          <textarea id="cover-text" class="textarea" placeholder="Paste or type your cover text here&#8230; The longer, the higher capacity." rows="5" style="resize:vertical"></textarea>
-          <div id="cover-text-cap" style="font-family:'Space Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:4px"></div>
-        </div>
-        <input type="file" id="carrier-input" style="display:none" onchange="onCarrierChange(this)" accept="image/*,audio/*,video/*">
+        <input type="file" id="carrier-input" style="display:none" onchange="onCarrierChange(this)" accept="image/*,audio/*">
         <input type="hidden" id="media-type-input" value="<?=$preCarrierFile?htmlspecialchars($preCarrierFile['file_type']):'image'?>">
         <input type="hidden" id="payload-type-input" value="text">
         <input type="hidden" id="steg-method-input" value="lsb">
@@ -251,17 +234,6 @@ function fmtSz(int $b):string{if($b<1024)return $b.' B';if($b<1048576)return rou
         </div>
       </div>
       <div class="terminal-body" id="embed-term-body"></div>
-      <!-- Stego text output (text carrier only) -->
-      <div id="stego-text-reveal" style="display:none">
-        <div class="stego-text-result">
-          <div class="stego-text-result-label">&#9632; Stego Text &mdash; <span id="stego-text-overhead"></span></div>
-          <div class="stego-text-result-content" id="stego-text-content"></div>
-          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" onclick="copyStegoText()">&#11041; Copy Text</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadStegoText()">&#8595; Download .txt</button>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </div>
@@ -276,7 +248,6 @@ const EMBED_URL='<?=SITE_URL?>/php/api/process_ajax.php';
 const USER_STEG_KEY='<?=$userSk?>';
 const IS_GUEST=<?=$isGuest?'true':'false'?>;
 let _engineOnline=false,_currentFileType='<?=$preCarrierFile?htmlspecialchars($preCarrierFile['file_type']):'image'?>',_selectedMethod='lsb';
-let _stegoTextOutput='';
 
 /* ── Steg method definitions (all algorithms from Python server) ─────── */
 const STEG_METHODS={
@@ -285,6 +256,7 @@ const STEG_METHODS={
     {slug:'xor_pixel',name:'XOR Pixel',        desc:'Key-stream XOR on LSBs — keyed, key-dependent extraction',special:true,badge:'special'},
     {slug:'alpha',    name:'Alpha Channel',    desc:'Hidden in transparency layer — PNG only, zero visual change'},
     {slug:'dct',      name:'DCT JPEG',         desc:'Mid-frequency DCT coefficients — JPEG output, WhatsApp-resistant',special:true,badge:'dct'},
+    {slug:'pixel_vault',name:'Pixel Vault',desc:'Hidden as extra pixel rows beyond the declared height — key-seeded shuffle + XOR, PNG output',special:true,badge:'special'},
   ],
   img_in_img:[
     {slug:'img_in_img',name:'Image-in-Image',  desc:'4-bit nibble merge — embeds any file (image/doc/zip) inside carrier, PNG output',special:true,badge:'special'},
@@ -294,22 +266,10 @@ const STEG_METHODS={
     {slug:'phase',  name:'Phase Coding',       desc:'Encode payload in DFT phase segments — spectrally covert'},
     {slug:'aahe',   name:'AAHE Adaptive',      desc:'Psychoacoustic masking + keyed scatter + 2nd-LSB QIM — most imperceptible',special:true,badge:'special'},
   ],
-  video:[
-    {slug:'frame_lsb',name:'Frame LSB',        desc:'LSB steganography across all video frames — very high capacity'},
-  ],
-  text:[
-    {slug:'zwsp',       name:'Zero-Width Space',   desc:'Invisible U+200B/C chars between words — survives copy-paste'},
-    {slug:'homoglyph',  name:'Homoglyph Swap',     desc:'Cyrillic/Greek lookalike substitution — visually identical letters'},
-    {slug:'unicode_tag',name:'Unicode Tag Block',  desc:'Invisible tag-block chars (U+E0000) — zero render footprint',special:true,badge:'special'},
-    {slug:'whitespace', name:'Whitespace Variant', desc:'SPACE vs NO-BREAK SPACE — pixel-perfect identical in every font'},
-    {slug:'combining',  name:'Combining Diacritics',desc:'CGJ + soft-hyphen after letters — invisible in all renderers'},
-  ]
 };
 
 function _getMethods(fileType,payloadType){
   if(fileType==='audio') return [{label:'Audio Steganography',cls:'audio-group',methods:STEG_METHODS.audio}];
-  if(fileType==='video') return [{label:'Video Steganography',cls:'video-group',methods:STEG_METHODS.video}];
-  if(fileType==='text')  return [{label:'Text Steganography',cls:'text-group',methods:STEG_METHODS.text}];
   const isFilePay=(payloadType==='file'||payloadType==='media'||payloadType==='image');
   if(isFilePay) return [
     {label:'Image-in-Image (File Carrier)',cls:'img-in-img-group',methods:STEG_METHODS.img_in_img},
@@ -386,10 +346,10 @@ function clearPayloadMedia(){
 function onCarrierChange(input){
   const f=input?.files?.[0];
   if(f){
-    const type=f.type.startsWith('audio/')?'audio':f.type.startsWith('video/')?'video':'image';
+    const type=f.type.startsWith('audio/')?'audio':'image';
     _currentFileType=type;
     document.getElementById('media-type-input').value=type;
-    ['image','audio','video','text'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
+    ['image','audio'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
   }
   handleCarrierSelect(input,'carrier-preview');
   refreshStegMethods();
@@ -433,12 +393,6 @@ function restoreEmbed(){
   if(p)document.getElementById('embed-payload').value=p;if(k)document.getElementById('embed-stego-key').value=k;}catch(e){}
 }
 
-function copyStegoText(){if(_stegoTextOutput)navigator.clipboard.writeText(_stegoTextOutput).then(()=>showToast('Stego text copied!'));}
-function downloadStegoText(){
-  if(!_stegoTextOutput)return;
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([_stegoTextOutput],{type:'text/plain'}));a.download='stego_output.txt';a.click();
-}
-
 /* ── Main embed function ─────────────────────────────────────────────── */
 function runEmbed(){
   const payloadText=document.getElementById('embed-payload')?.value||'';
@@ -448,12 +402,9 @@ function runEmbed(){
   const carrierFile=document.getElementById('carrier-input')?.files[0];
   const preCarrierId=document.getElementById('pre-carrier-file-id')?.value||'';
   const stegMethod=document.getElementById('steg-method-input')?.value||_selectedMethod||'lsb';
-  const isTextCarrier=(_currentFileType==='text');
-  const coverText=document.getElementById('cover-text')?.value||'';
   const btn=document.getElementById('embed-btn');
 
-  if(!isTextCarrier&&!carrierFile&&!preCarrierId){showStegError('Upload a carrier file first');return;}
-  if(isTextCarrier&&!coverText.trim()){showStegError('Enter cover text for text steganography');return;}
+  if(!carrierFile&&!preCarrierId){showStegError('Upload a carrier file first');return;}
   if(payloadType==='text'&&!payloadText){showStegError('Enter a payload message');return;}
   if(payloadType!=='text'&&!payloadFile){showStegError('Select a payload file first');return;}
   if(!stegoKey){showStegError('Enter your stego key');return;}
@@ -461,21 +412,20 @@ function runEmbed(){
   setLoading(btn,true);if(btn._setProc)btn._setProc(true);
   showTerminal('embed-terminal');
   const tb=document.getElementById('embed-term-body');
-  document.getElementById('stego-text-reveal').style.display='none';
   const hasCrypto=chain.some(s=>['symmetric','asymmetric','classical'].includes(s.category));
   const payloadBytes=payloadType!=='text'?(payloadFile?.size||0):new TextEncoder().encode(payloadText).length;
-  const carrierSizeKB=isTextCarrier?Math.round(coverText.length/10):preCarrierId?'?':((carrierFile?.size||0)/1024).toFixed(1);
+  const carrierSizeKB=preCarrierId?'?':((carrierFile?.size||0)/1024).toFixed(1);
 
   animateTerminal(tb,['Initializing StegoPS secure session\u2026','Authenticating credentials\u2026','Connecting to Python engine\u2026'],()=>{
     addTermLine(tb,_engineOnline?'success':'warn',(_engineOnline?'\u2713 Engine online':'\u26a0 Engine unknown')+' \u2014 proceeding\u2026');
     _termDivider(tb);
-    addTermLine(tb,'server','> Carrier: '+(isTextCarrier?'Text cover ('+coverText.length+' chars)':preCarrierId?'Pre-loaded #'+preCarrierId:(carrierFile?.name||'?')));
+    addTermLine(tb,'server','> Carrier: '+(preCarrierId?'Pre-loaded #'+preCarrierId:(carrierFile?.name||'?')));
     addTermLine(tb,'','> Payload: '+payloadType.toUpperCase()+' / > Method: '+stegMethod.toUpperCase().replace(/_/g,' '));
-    if(!isTextCarrier&&!preCarrierId)_termMetric(tb,'Carrier',carrierSizeKB+' KB',Math.min(100,(carrierFile?.size||0)/1024/10),'#60a5fa');
+    if(!preCarrierId)_termMetric(tb,'Carrier',carrierSizeKB+' KB',Math.min(100,(carrierFile?.size||0)/1024/10),'#60a5fa');
     setTimeout(()=>{
       _termAnimateScan(tb,'SCAN',4,80,()=>{
-        const estCapKB=isTextCarrier?Math.round(coverText.length/80):preCarrierId?'?':Math.floor((carrierFile?.size||0)*0.04/1024);
-        if(!isTextCarrier&&!preCarrierId)_termMetric(tb,'Capacity',estCapKB+' KB',60,'#34d399');
+        const estCapKB=preCarrierId?'?':Math.floor((carrierFile?.size||0)*0.04/1024);
+        if(!preCarrierId)_termMetric(tb,'Capacity',estCapKB+' KB',60,'#34d399');
         _termMetric(tb,'Payload',payloadBytes+' B',Math.min(100,payloadBytes/((typeof estCapKB==='number'&&estCapKB>0)?estCapKB*1024:1024)*100),'#fbbf24');
         _termDivider(tb);
         if(chain.length>0){
@@ -488,24 +438,16 @@ function runEmbed(){
           addTermLine(tb,'server','> Applying '+stegMethod.toUpperCase().replace(/_/g,' ')+'\u2026');
           _termAnimateScan(tb,'EMBED',5,70,()=>{
             const fd=new FormData();
-            if(isTextCarrier){
-              fd.append('action','embed');
-              fd.append('payload_type','text_steg');
-              fd.append('cover_text',coverText);
-              fd.append('payload_text',payloadType==='text'?payloadText:'');
-              if(payloadType!=='text'&&payloadFile)fd.append('payload_media',payloadFile);
-            } else {
-              fd.append('action','embed');
-              if(payloadType!=='text')fd.append('payload_media',payloadFile);
-              else fd.append('payload_text',payloadText);
-              fd.append('media_type',_currentFileType);
-              if(preCarrierId)fd.append('carrier_file_id',preCarrierId);
-              else fd.append('carrier',carrierFile);
-            }
+            fd.append('action','embed');
+            if(payloadType!=='text')fd.append('payload_media',payloadFile);
+            else fd.append('payload_text',payloadText);
+            fd.append('media_type',_currentFileType);
+            if(preCarrierId)fd.append('carrier_file_id',preCarrierId);
+            else fd.append('carrier',carrierFile);
             fd.append('stego_key',stegoKey);
             fd.append('steg_method',stegMethod);
             fd.append('chain_data',JSON.stringify(chain));
-            fd.append('payload_type',isTextCarrier?'text_steg':payloadType!=='text'?'media':payloadType);
+            fd.append('payload_type',payloadType!=='text'?'media':payloadType);
 
             fetch(EMBED_URL,{method:'POST',body:fd})
               .then(r=>{if(!r.headers.get('content-type')?.includes('json'))return r.text().then(t=>{throw new Error('Server error: '+t.substring(0,200));});return r.json();})
@@ -513,26 +455,16 @@ function runEmbed(){
                 setLoading(btn,false);_termDivider(tb);
                 if(d.success){
                   if(btn._flashOk)btn._flashOk();
-                  if(d.stego_text){
-                    // Text carrier output
-                    _stegoTextOutput=d.stego_text;
-                    addTermLine(tb,'success','\u2713 TEXT EMBED COMPLETE \u2014 '+(d.overhead_chars||0)+' invisible chars added');
-                    document.getElementById('stego-text-reveal').style.display='block';
-                    document.getElementById('stego-text-content').textContent=d.stego_text;
-                    document.getElementById('stego-text-overhead').textContent=(d.overhead_chars||0)+' invisible chars added';
+                  addTermLine(tb,'success','\u2713 COMPLETE \u2014 #'+d.op_id);
+                  _termMetric(tb,'In',((d.carrier_size||0)/1024).toFixed(1)+' KB',70,'#60a5fa');
+                  _termMetric(tb,'Out',((d.output_size||0)/1024).toFixed(1)+' KB',72,'#00e5c8');
+                  if(d.fallback_note)addTermLine(tb,'warn','\u26a0 '+d.fallback_note);
+                  if(IS_GUEST){
+                    addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a>');
                   } else {
-                    // File carrier output
-                    addTermLine(tb,'success','\u2713 COMPLETE \u2014 #'+d.op_id);
-                    _termMetric(tb,'In',((d.carrier_size||0)/1024).toFixed(1)+' KB',70,'#60a5fa');
-                    _termMetric(tb,'Out',((d.output_size||0)/1024).toFixed(1)+' KB',72,'#00e5c8');
-                    if(d.fallback_note)addTermLine(tb,'warn','\u26a0 '+d.fallback_note);
-                    if(IS_GUEST){
-                      addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a>');
-                    } else {
-                      addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a> &nbsp; <a href="<?=SITE_URL?>/share.php?op='+d.op_id+'" style="color:#a78bfa">&#11041; Share</a>');
-                    }
-                    localStorage.removeItem('embed_payload');
+                    addTermLine(tb,'','<a href="<?=SITE_URL?>/php/api/download.php?id='+d.file_id+'" style="color:var(--accent)">\u2B07 Download</a> &nbsp; <a href="<?=SITE_URL?>/share.php?op='+d.op_id+'" style="color:#a78bfa">&#11041; Share</a>');
                   }
+                  localStorage.removeItem('embed_payload');
                 } else {
                   if(btn._flashErr)btn._flashErr();else setLoading(btn,false);
                   addTermLine(tb,'err','\u2717 '+d.message);showStegError(d.message);
@@ -561,9 +493,7 @@ function initDrop(zone,input,cb){
 
 const _mediaInfo={
   image:{icon:'\uD83D\uDDBC',sub:'PNG, JPG, BMP supported',technique:'LSB / DCT / Alpha / Image-in-Image',accept:'image/*'},
-  audio:{icon:'\uD83C\uDFB5',sub:'WAV required for all audio methods',technique:'WAV LSB / Phase Coding / AAHE',accept:'audio/wav,audio/*'},
-  video:{icon:'\uD83C\uDFA6',sub:'MP4, AVI supported',technique:'Frame LSB Steganography',accept:'video/*'},
-  text: {icon:'\uD83D\uDCC4',sub:'Paste cover text below',technique:'Zero-Width / Homoglyph / Unicode Tag',accept:''}
+  audio:{icon:'\uD83C\uDFB5',sub:'WAV, MP3, FLAC, OGG, AAC, M4A, OPUS, WMA, AIFF supported',technique:'WAV LSB / Phase Coding / AAHE',accept:'audio/*'}
 };
 
 window.addEventListener('DOMContentLoaded',()=>{
@@ -578,7 +508,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   };
 
   window.switchMedia=function(type){
-    ['image','audio','video','text'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
+    ['image','audio'].forEach(t=>document.getElementById('mt-'+t)?.classList.toggle('active',t===type));
     const m=_mediaInfo[type]||_mediaInfo.image;
     document.getElementById('carrier-icon').textContent=m.icon;
     document.getElementById('carrier-sub').textContent=m.sub;
@@ -586,10 +516,6 @@ window.addEventListener('DOMContentLoaded',()=>{
     document.getElementById('media-type-input').value=type;
     const ci=document.getElementById('carrier-input');if(ci)ci.accept=m.accept||'image/*';
     const cp=document.getElementById('carrier-preview');if(cp){cp.style.display='none';cp.innerHTML='';}
-    // Show/hide file upload vs cover text
-    const isText=(type==='text');
-    const row=document.getElementById('carrier-upload-row');if(row)row.style.display=isText?'none':'flex';
-    document.getElementById('cover-text-section').style.display=isText?'block':'none';
     _currentFileType=type;
     refreshStegMethods();
   };

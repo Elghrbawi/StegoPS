@@ -2,6 +2,7 @@ import struct, zlib, hashlib
 import numpy as np
 from PIL import Image
 from io import BytesIO
+import image_engine2 as _engine2
 
 _MAGIC      = b'\xDE\xAD'
 _WA_QUALITY = 80
@@ -49,6 +50,19 @@ def _read_payload_from_bits(bits, bpc: int = 1) -> bytes:
     if (zlib.crc32(payload) & 0xFFFFFFFF) != stored_crc: raise ValueError('CRC mismatch — wrong method or corrupted data')
     return payload
 
+def _unpack_verified(blob: bytes) -> bytes:
+    """Byte-level counterpart of _read_payload_from_bits, for methods (like
+    pixel_vault) that recover whole bytes directly instead of raw bits."""
+    mlen = len(_MAGIC)
+    if len(blob) < mlen + 8 or blob[:mlen] != _MAGIC:
+        raise ValueError('No hidden payload found (magic mismatch) — wrong key or not embedded with this method')
+    length     = int.from_bytes(blob[mlen:mlen + 4], 'big')
+    stored_crc = int.from_bytes(blob[mlen + 4:mlen + 8], 'big')
+    payload    = blob[mlen + 8: mlen + 8 + length]
+    if len(payload) != length: raise ValueError('Payload length exceeds available data')
+    if (zlib.crc32(payload) & 0xFFFFFFFF) != stored_crc: raise ValueError('CRC mismatch — wrong key or corrupted data')
+    return payload
+
 def embed(carrier_path: str, data: bytes, out_path: str, key: str, method: str):
     embed._last_actual_method = method
     if   method == 'lsb':        _embed_lsb(carrier_path, data, out_path)
@@ -56,6 +70,7 @@ def embed(carrier_path: str, data: bytes, out_path: str, key: str, method: str):
     elif method == 'alpha':      _embed_alpha(carrier_path, data, out_path)
     elif method == 'img_in_img': _embed_img_in_img(carrier_path, data, out_path)
     elif method == 'dct':        _embed_dct(carrier_path, data, out_path)
+    elif method == 'pixel_vault': _embed_pixel_vault(carrier_path, data, out_path, key)
     else: raise ValueError(f'Unknown image steg method: {method}')
 embed._last_actual_method = None
 
@@ -65,6 +80,7 @@ def extract(stego_path: str, key: str, method: str) -> bytes:
     if method == 'alpha':      return _extract_alpha(stego_path)
     if method == 'img_in_img': return _extract_img_in_img(stego_path)
     if method == 'dct':        return _extract_dct(stego_path)
+    if method == 'pixel_vault': return _extract_pixel_vault(stego_path, key)
     raise ValueError(f'Unknown image steg method: {method}')
 
 def _carrier_capacity(carrier_path: str) -> dict:
@@ -148,6 +164,17 @@ def _extract_img_in_img(stego_path: str) -> bytes:
     nibbles = flat & 0x0F
     packed  = (nibbles[0::2] << 4) | nibbles[1::2]
     return _read_payload_from_bits(np.unpackbits(packed).tolist(), bpc=4)
+
+def _embed_pixel_vault(carrier_path: str, data: bytes, out_path: str, key: str):
+    with open(carrier_path, 'rb') as f: carrier_bytes = f.read()
+    packed = _pack(data)
+    stego_bytes = _engine2.embed_image2(carrier_bytes, packed, key)
+    with open(out_path, 'wb') as f: f.write(stego_bytes)
+
+def _extract_pixel_vault(stego_path: str, key: str) -> bytes:
+    with open(stego_path, 'rb') as f: stego_bytes = f.read()
+    blob = _engine2.extract_image2(stego_bytes, key)
+    return _unpack_verified(blob)
 
 def _to_wa_jpeg(carrier_path: str) -> bytearray:
     return bytearray(_wa_compress(Image.open(carrier_path)))

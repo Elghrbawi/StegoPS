@@ -19,7 +19,7 @@ if ($uid === 0) {
 if (!$file) { http_response_code(404); die('File not found or access denied.'); }
 $filePath = UPLOAD_PATH . str_replace('/', DIRECTORY_SEPARATOR, $file['storage_path']);
 if (!file_exists($filePath)) { http_response_code(404); die('File not found on disk.'); }
-$mimeMap = ['png'=>'image/png','jpg'=>'image/jpeg','jpeg'=>'image/jpeg','bmp'=>'image/bmp','wav'=>'audio/wav','mp3'=>'audio/mpeg','mp4'=>'video/mp4','avi'=>'video/avi'];
+$mimeMap = ['png'=>'image/png','jpg'=>'image/jpeg','jpeg'=>'image/jpeg','bmp'=>'image/bmp','wav'=>'audio/wav','mp3'=>'audio/mpeg'];
 $ext  = strtolower(pathinfo($file['original_filename'], PATHINFO_EXTENSION));
 $mime = $mimeMap[$ext] ?? 'application/octet-stream';
 header('Content-Type: ' . $mime);
@@ -27,4 +27,4 @@ header('Content-Disposition: attachment; filename="' . addslashes($file['origina
 header('Content-Length: ' . filesize($filePath));
 header('Cache-Control: no-store');
 readfile($filePath);
-exit;
+exit;
