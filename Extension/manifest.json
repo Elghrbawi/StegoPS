@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "STEGOPS",
+  "name": "StegOps",
   "version": "2.0.0",
-  "description": "Hide & detect secret messages in WhatsApp images using DCT steganography. Survives WhatsApp compression.",
+  "description": "good stuff.",
   "permissions": [
     "activeTab",
     "storage",
@@ -22,7 +22,7 @@
   ],
   "browser_action": {
     "default_popup": "popup.html",
-    "default_title": "STEGOPS",
+    "default_title": "StegOps",
     "default_icon": {
       "16": "icons/icon16.svg",
       "48": "icons/icon48.svg",
