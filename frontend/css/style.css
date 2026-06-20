@@ -574,17 +574,38 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 /* ══════════════════════════════════════════════
    NETRUNNER — Red channel cipher chip overrides
    ══════════════════════════════════════════════ */
-.algo-chip.netrunner-chip,
-.algo-chip.custom.netrunner-chip {
-  background: rgba(220,38,38,.1) !important;
-  border-color: transparent !important;
-  color: #f87171 !important;
-}
-.algo-chip.netrunner-chip:hover {
-  background: rgba(220,38,38,.2) !important;
-  border-color: transparent !important;
-  box-shadow: 0 0 16px rgba(220,38,38,.5),0 0 5px rgba(220,38,38,.25);
-}
-.algo-chip.netrunner-chip .chip-plus {
-  color: #f87171 !important;
-}
+.algo-chip.netrunner-chip,.algo-chip.custom.netrunner-chip{background:rgba(220,38,38,.1) !important;border-color:transparent !important;color:#f87171 !important}
+.algo-chip.netrunner-chip:hover{background:rgba(220,38,38,.2) !important;border-color:#dc2626 !important;box-shadow:0 0 16px rgba(220,38,38,.5),0 0 5px rgba(220,38,38,.25);transform:translateY(-2px)}
+.algo-chip.netrunner-chip .chip-plus{color:#f87171 !important}
+
+/* ══════════════════════════════════════════════
+   PAGE FX — full-screen flashes on special selects
+   ══════════════════════════════════════════════ */
+.page-fx-overlay{position:fixed;inset:0;z-index:9500;pointer-events:none;display:none;overflow:hidden}
+.page-fx-overlay.active{display:block}
+.fx-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.fx-flash{position:absolute;inset:0}
+.netrunner-fx .fx-scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(220,38,38,.06) 2px,rgba(220,38,38,.06) 4px);animation:netrunnerScan .4s linear infinite}
+@keyframes netrunnerScan{from{transform:translateY(0)}to{transform:translateY(4px)}}
+.netrunner-fx .fx-flash{background:radial-gradient(ellipse at center,rgba(220,38,38,.2),transparent 70%);animation:netrunnerFlash 1.4s ease forwards}
+@keyframes netrunnerFlash{0%{opacity:0}8%{opacity:1}22%{opacity:.35}38%{opacity:.8}55%{opacity:.15}100%{opacity:0}}
+body.netrunner-shift{animation:netrunnerShift .6s cubic-bezier(.36,.07,.19,.97) both}
+@keyframes netrunnerShift{0%{transform:translate(0,0)}8%{transform:translate(-8px,2px) skewX(-1deg)}16%{transform:translate(7px,-3px) skewX(1deg)}24%{transform:translate(-6px,2px)}32%{transform:translate(5px,-2px) skewX(-.5deg)}40%{transform:translate(-4px,2px)}50%{transform:translate(4px,-1px)}62%{transform:translate(-2px,1px)}75%{transform:translate(2px,-1px)}88%{transform:translate(-1px,0)}100%{transform:translate(0,0) skewX(0)}}
+.pixelvault-fx .fx-pixels{position:absolute;inset:0;display:grid}
+.pixelvault-fx .fx-pixels span{background:rgba(0,229,200,.4);opacity:0;animation:pixelVaultBlock .5s ease forwards}
+@keyframes pixelVaultBlock{0%{opacity:0;transform:scale(.3)}18%{opacity:1;transform:scale(1)}65%{opacity:.75;transform:scale(1)}100%{opacity:0;transform:scale(.6)}}
+.pixelvault-fx .fx-flash{background:radial-gradient(ellipse at center,rgba(0,229,200,.16),transparent 70%);animation:pixelVaultFlash .5s ease forwards}
+@keyframes pixelVaultFlash{0%{opacity:0}20%{opacity:1}100%{opacity:0}}
+
+/* ── EXTENSION PROMO STRIP ── */
+.ext-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:5px 10px;margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-left:2px solid var(--accent);border-radius:6px}
+.ext-strip-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);box-shadow:0 0 5px var(--accent);animation:pulse 2s infinite;flex-shrink:0}
+.ext-strip-text{font-size:10px;color:var(--text-muted);flex:1;min-width:120px;font-family:'Space Mono',monospace;letter-spacing:.2px}
+.ext-strip-text strong{color:var(--text-dim);font-weight:700}
+.ext-strip-actions{display:flex;gap:6px;flex-wrap:wrap}
+.ext-strip-btn{font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.3px;padding:3px 9px;border-radius:5px;text-decoration:none;white-space:nowrap;background:var(--accent-dim);color:var(--accent);border:1px solid rgba(0,229,200,.25);transition:all .2s;display:inline-flex;align-items:center;gap:4px}
+.ext-strip-btn:hover{background:var(--accent);color:var(--bg)}
+.ext-strip-btn-ghost{background:transparent;color:var(--text-muted);border-color:var(--border)}
+.ext-strip-btn-ghost:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.ext-strip-sub{color:var(--text-muted);opacity:.85}
+@media(max-width:480px){.ext-strip{padding:5px 9px}.ext-strip-text{font-size:9px}.ext-strip-sub{display:none}}

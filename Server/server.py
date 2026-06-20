@@ -2,9 +2,11 @@ import os, json, hashlib, time, base64, tempfile
 from functools import wraps
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
+import importlib
 import image as img_steg
 import audio as aud_steg
 from chain_engine import encrypt_chain, decrypt_chain
+import test_algo as test_algo_module
 
 app = Flask(__name__)
 CORS(app)
@@ -28,8 +30,6 @@ STEG_METHODS = {
 _STEG_MOD = {'image': img_steg, 'audio': aud_steg}
 _EXT      = {'image': 'png', 'audio': 'wav'}
 
-
-# ── Auth ──────────────────────────────────────────────────────────────────────
 def auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -37,8 +37,6 @@ def auth(f):
         return f(*args, **kwargs)
     return decorated
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 def _parse_steps(data):
     steps = data.get('steps', [])
     if isinstance(steps, str):
@@ -62,29 +60,23 @@ def _encode_result(plain, method):
                         'is_binary': True,  'steg_method': method})
 
 def _b64_to_tmp(b64_str, suffix='.png'):
-    """Decode a base64 image string into a named temp file; caller must delete it."""
     raw  = base64.b64decode(b64_str)
-    # Detect JPEG magic bytes
     if raw[:2] == b'\xff\xd8':
         suffix = '.jpg'
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     tmp.write(raw); tmp.flush(); tmp.close()
     return tmp.name
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
 @app.route('/health', methods=['GET', 'POST'])
 def health():
     return jsonify({'status': 'ok', 'version': '4.1',
         'algorithms': ['caesar','vigenere','aes_256','chacha20','netrunner','des','des3'],
         'audio_steg': ['wav_lsb','phase','aahe']})
 
-
 @app.route('/api/methods/<file_type>', methods=['GET', 'POST'])
 @auth
 def methods(file_type):
     return jsonify(STEG_METHODS.get(file_type, []))
-
 
 @app.route('/api/capacity', methods=['POST'])
 @auth
@@ -94,19 +86,15 @@ def capacity():
     method    = data.get('steg_method', 'lsb')
     mod       = _STEG_MOD.get(file_type)
     if not mod: return jsonify({'error': f'Unsupported type: {file_type}'}), 400
-
-    # Accept either a path OR base64 bytes from the extension
     carrier_b64 = data.get('carrier_b64', '')
     carrier_path = data.get('carrier_path', '')
     tmp = None
-
     try:
         if carrier_b64:
             tmp = _b64_to_tmp(carrier_b64)
             carrier_path = tmp
         if not carrier_path or not os.path.exists(carrier_path):
             return jsonify({'error': 'Carrier not found'}), 400
-
         cap_fn = getattr(mod, '_carrier_capacity', None)
         if cap_fn:
             caps = cap_fn(carrier_path)
@@ -121,7 +109,6 @@ def capacity():
     finally:
         if tmp and os.path.exists(tmp): os.unlink(tmp)
 
-
 @app.route('/api/embed', methods=['POST'])
 @auth
 def embed():
@@ -131,48 +118,35 @@ def embed():
     file_type = data.get('file_type', 'image')
     op_id     = data.get('op_id', 0)
     steps     = _parse_steps(data)
-
     mod = _STEG_MOD.get(file_type)
     if not mod: return jsonify({'error': f'Unsupported carrier type: {file_type}'}), 400
-
-    # ── Accept carrier as base64 (from extension) OR as a file path (dashboard) ──
     carrier_b64  = data.get('carrier_b64', '')
     carrier_path = data.get('carrier_path', '')
     carrier_tmp  = None
-
     try:
         if carrier_b64:
             carrier_tmp  = _b64_to_tmp(carrier_b64)
             carrier_path = carrier_tmp
         if not carrier_path or not os.path.exists(carrier_path):
             return jsonify({'error': 'Carrier not provided or not found'}), 400
-
-        # Payload
         payload_bytes = _decode_payload(data)
         try:
             encrypted = encrypt_chain(payload_bytes, stego_key, steps)
         except Exception as e:
             return jsonify({'error': f'Encryption failed: {e}'}), 400
-
-        # Output to temp file
         ext      = 'jpg' if file_type == 'image' and method == 'dct' else _EXT.get(file_type, 'bin')
         out_name = f'stego_{op_id}_{hashlib.md5(f"{op_id}{time.time()}".encode()).hexdigest()[:6]}.{ext}'
-
-        # If the caller supplied an output_dir, write there; otherwise use a temp dir
         out_dir = data.get('output_dir', '') or tempfile.mkdtemp()
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, out_name)
-
         try:
             mod.embed(carrier_path, encrypted, out_path, stego_key, method)
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
         except Exception as e:
             return jsonify({'error': f'Steg failed: {e}'}), 500
-
         actual       = getattr(mod.embed, '_last_actual_method', None) or method
         wa_resistant = actual in getattr(mod, 'WHATSAPP_RESISTANT', set())
-
         resp = {
             'success'         : True,
             'output_filename' : out_name,
@@ -186,24 +160,18 @@ def embed():
                                  (' — WhatsApp-resistant (MozJPEG 80, 4:2:0)' if wa_resistant
                                   else ' — use DCT for WhatsApp survival')),
         }
-
-        # ── If caller sent carrier as b64, return the stego image as b64 too ──
         if carrier_b64 and os.path.exists(out_path):
             with open(out_path, 'rb') as f:
                 resp['output_b64'] = base64.b64encode(f.read()).decode()
-            # Clean up temp output if no persistent out_dir was requested
             if not data.get('output_dir'):
                 os.unlink(out_path)
-
         if actual != method:
             resp['fallback_note'] = (f'Payload too large for {method.upper()} — '
                                      f'embedded with {actual.upper()} instead.')
         return jsonify(resp)
-
     finally:
         if carrier_tmp and os.path.exists(carrier_tmp):
             os.unlink(carrier_tmp)
-
 
 @app.route('/api/extract', methods=['POST'])
 @auth
@@ -213,38 +181,48 @@ def extract():
     method    = data.get('steg_method', 'lsb')
     file_type = data.get('file_type', 'image')
     steps     = _parse_steps(data)
-
     mod = _STEG_MOD.get(file_type)
     if not mod: return jsonify({'error': f'Unsupported type: {file_type}'}), 400
-
-    # ── Accept stego image as base64 (from extension) OR as a file path ──
     stego_b64  = data.get('stego_b64', '')
     stego_path = data.get('stego_path', '')
     stego_tmp  = None
-
     try:
         if stego_b64:
             stego_tmp  = _b64_to_tmp(stego_b64)
             stego_path = stego_tmp
         if not stego_path or not os.path.exists(stego_path):
             return jsonify({'error': 'Stego file not provided or not found'}), 400
-
         try:
             encrypted = mod.extract(stego_path, stego_key, method)
         except Exception as e:
             return jsonify({'error': f'Extract failed: {e}'}), 500
-
         try:
             plain = decrypt_chain(encrypted, stego_key, steps)
         except Exception as e:
             return jsonify({'error': f'Decryption failed: {e}'}), 400
-
         return _encode_result(plain, method)
-
     finally:
         if stego_tmp and os.path.exists(stego_tmp):
             os.unlink(stego_tmp)
 
+@app.route('/api/test_algo', methods=['POST'])
+@auth
+def test_algo_route():
+    data = request.get_json(force=True, silent=True) or {}
+    algo_slug = data.get('algo_slug', '')
+    plaintext = data.get('plaintext', 'Hello')
+    key = data.get('key', 'testkey')
+    if not algo_slug:
+        return jsonify({'error': 'algo_slug required'}), 400
+    try:
+        from chain_engine import ALGO_MAP
+        mod_name = ALGO_MAP.get(algo_slug)
+        if not mod_name:
+            return jsonify({'error': f'Unknown algorithm slug: {algo_slug}'}), 400
+        result = test_algo_module.run_test(mod_name, plaintext, key)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5001, debug=False, threaded=True)

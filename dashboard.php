@@ -34,6 +34,14 @@ function fmtAmPm(string $dt):string{return date('d M Y g:i A',strtotime($dt));}
 <a href="<?= SITE_URL ?>/embed.php" class="btn btn-primary btn-lg">⬇ New Embed</a>
 <?php endif; ?>
 </div>
+<div class="ext-strip">
+<span class="ext-strip-dot"></span>
+<div class="ext-strip-text"><strong>StegOps extension</strong> is available now <span class="ext-strip-sub">&mdash; embed &amp; extract straight from your browser</span></div>
+<div class="ext-strip-actions">
+<a href="#" class="ext-strip-btn">⬡ Get the Add-on</a>
+<a href="<?= SITE_URL ?>/StegTool.zip" class="ext-strip-btn ext-strip-btn-ghost" download>⬇ Manual .zip</a>
+</div>
+</div>
 <div class="grid-4" style="margin-bottom:20px">
 <div class="stat-card green"><div class="stat-value green"><?= $stats['ops'] ?></div><div class="stat-label">Total Operations</div></div>
 <div class="stat-card purple"><div class="stat-value purple"><?= $stats['chains'] ?></div><div class="stat-label">Saved Chains</div></div>

@@ -1,5 +1,44 @@
 /* ── GLITCH TRANSITION ── */
 function triggerGlitchTransition(url,isNewUser){const ov=document.getElementById('glitch-overlay');if(!ov){window.location.href=url;return;}ov.innerHTML='<div class="gl-base"></div><div class="gl-scan"></div><div class="gl-r"></div><div class="gl-g"></div><div class="gl-b"></div><div class="gl-line"></div><div class="gl-txt">'+(isNewUser?'IDENTITY CREATED':'ACCESS GRANTED')+'</div>';ov.classList.add('active');setTimeout(()=>{window.location.href=url;},980);}
+/* ── PAGE FX (full-screen flashes for special selections) ── */
+const _fxChars='\u2591\u2592\u2593\u2502\u2524\u251C\u252C\u2534\u25C6\u25C8\u2B21\u2295\u2297\u2584\u2580\u25A0\u25A1\u25AA\u25AB\u29C1\u26D3#@$%&\u2020\u2021\u00A7\u2316\u2317\u2318\u229E\u229F\u22A0'.split('');
+function _fxOverlay(){let ov=document.getElementById('page-fx-overlay');if(!ov){ov=document.createElement('div');ov.id='page-fx-overlay';ov.className='page-fx-overlay';document.body.appendChild(ov);}return ov;}
+let _netrunnerFxBusy=false;
+function triggerNetrunnerPageFx(){
+if(_netrunnerFxBusy)return;_netrunnerFxBusy=true;
+const ov=_fxOverlay();ov.className='page-fx-overlay netrunner-fx active';
+ov.innerHTML='<canvas class="fx-canvas" id="netrunner-fx-cvs"></canvas><div class="fx-scan"></div><div class="fx-flash"></div>';
+document.body.classList.add('netrunner-shift');
+setTimeout(()=>document.body.classList.remove('netrunner-shift'),620);
+const cvs=document.getElementById('netrunner-fx-cvs');const ctx=cvs.getContext('2d');
+const W=cvs.width=window.innerWidth,H=cvs.height=window.innerHeight;
+const sp=24;const cnt=Math.ceil(W/sp)+2;
+const cols=Array.from({length:cnt},(_,i)=>({x:i*sp+Math.random()*6,y:Math.random()*-H,speed:5+Math.random()*6,char:_fxChars[Math.floor(Math.random()*_fxChars.length)],ct:Math.floor(Math.random()*16)}));
+const dur=1400,start=performance.now();
+function draw(now){
+const t=now-start;ctx.clearRect(0,0,W,H);
+const fade=t>dur-350?Math.max(0,(dur-t)/350):1;
+ctx.font='14px "JetBrains Mono",monospace';
+cols.forEach(c=>{
+c.y+=c.speed;if(c.y>H+20)c.y=-20;c.ct--;
+if(c.ct<=0){c.char=_fxChars[Math.floor(Math.random()*_fxChars.length)];c.ct=5+Math.floor(Math.random()*14);}
+ctx.globalAlpha=(.3+Math.random()*.45)*fade;ctx.fillStyle='#f87171';ctx.fillText(c.char,c.x,c.y);
+});
+ctx.globalAlpha=1;
+if(t<dur)requestAnimationFrame(draw);
+else{ov.classList.remove('active');setTimeout(()=>{ov.innerHTML='';_netrunnerFxBusy=false;},300);}
+}
+requestAnimationFrame(draw);
+}
+let _pixelVaultFxBusy=false;
+function triggerPixelVaultPageFx(){
+if(_pixelVaultFxBusy)return;_pixelVaultFxBusy=true;
+const ov=_fxOverlay();ov.className='page-fx-overlay pixelvault-fx active';
+const size=44;const cols=Math.ceil(window.innerWidth/size)+1,rows=Math.ceil(window.innerHeight/size)+1;
+let grid='';for(let i=0;i<cols*rows;i++)grid+='<span style="animation-delay:'+Math.floor(Math.random()*150)+'ms"></span>';
+ov.innerHTML='<div class="fx-pixels" style="grid-template-columns:repeat('+cols+',1fr);grid-template-rows:repeat('+rows+',1fr)">'+grid+'</div><div class="fx-flash"></div>';
+setTimeout(()=>{ov.classList.remove('active');setTimeout(()=>{ov.innerHTML='';_pixelVaultFxBusy=false;},200);},500);
+}
 function navSwitch(e,url,dir){e.preventDefault();const card=document.getElementById('auth-card');if(!card){window.location.href=url;return false;}card.classList.add(dir==='right'?'slide-out-left':'slide-out-right');setTimeout(()=>{window.location.href=url+'?from='+(dir==='right'?'login':'register');},320);return false;}
 /* ── ERRORS / TOASTS ── */
 function showInlineError(el,msg){if(!el)return;el.textContent=msg;el.style.display='flex';el.classList.remove('show');void el.offsetWidth;el.classList.add('show');}
@@ -22,7 +61,7 @@ const DUAL_KEY_ALGOS=['aes-cbc','aes-gcm','aes-cfb','camellia','blowfish-cbc','d
 const NO_KEY_ALGOS=['md5','sha1','sha256','sha512','sha3','blake2','base64','base58','hex','binary','run-length','lz4','zlib','deflate','huffman','atbash','rot13','polybius'];
 let chain=[];
 function algoNeedsKey(slug){const s=(slug||'').toLowerCase();if(NO_KEY_ALGOS.some(n=>s.includes(n)))return 0;if(DUAL_KEY_ALGOS.some(n=>s.includes(n)))return 2;return 1;}
-function addToChain(name,category,slug){chain.push({name,category,slug,key:'',key2:''});renderChain();saveChainKey();}
+function addToChain(name,category,slug){chain.push({name,category,slug,key:'',key2:''});renderChain();saveChainKey();if((slug||'').toLowerCase()==='netrunner')triggerNetrunnerPageFx();}
 function removeFromChain(idx){chain.splice(idx,1);renderChain();saveChainKey();}
 function clearChain(){chain=[];renderChain();saveChainKey();}
 function calcStrength(){let s=0;const cats=chain.map(c=>c.category);s+=chain.length*15;if(cats.includes('symmetric'))s+=30;if(cats.includes('asymmetric'))s+=25;if(cats.includes('hashing'))s+=15;if(cats.includes('classical'))s+=10;return Math.min(100,s+Math.min(chain.length,5)*3);}
