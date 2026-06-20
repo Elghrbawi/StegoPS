@@ -52,12 +52,26 @@ def _decode_payload(data):
     return raw.encode('utf-8') if isinstance(raw, str) else raw
 
 def _encode_result(plain, method):
+    # Check if this is a wrapped file payload (wrap_file_payload from audio.py / image steg)
+    unwrapped = aud_steg.unwrap_file_payload(plain)
+    if unwrapped is not None:
+        filename, content = unwrapped
+        return jsonify({
+            'success'    : True,
+            'payload'    : base64.b64encode(content).decode(),
+            'is_binary'  : True,
+            'is_file'    : True,
+            'filename'   : filename,
+            'steg_method': method,
+        })
     try:
         return jsonify({'success': True, 'payload': plain.decode('utf-8'),
-                        'is_binary': False, 'steg_method': method})
+                        'is_binary': False, 'is_file': False, 'filename': '',
+                        'steg_method': method})
     except UnicodeDecodeError:
         return jsonify({'success': True, 'payload': base64.b64encode(plain).decode(),
-                        'is_binary': True,  'steg_method': method})
+                        'is_binary': True,  'is_file': False, 'filename': '',
+                        'steg_method': method})
 
 def _b64_to_tmp(b64_str, suffix='.png'):
     raw  = base64.b64decode(b64_str)
@@ -130,6 +144,11 @@ def embed():
         if not carrier_path or not os.path.exists(carrier_path):
             return jsonify({'error': 'Carrier not provided or not found'}), 400
         payload_bytes = _decode_payload(data)
+        # If this is a file payload, wrap it with the filename so extraction can recover it
+        ptype = data.get('payload_type', 'text')
+        if ptype in ('file_b64', 'media', 'file'):
+            payload_filename = data.get('payload_filename', 'hidden_file')
+            payload_bytes = aud_steg.wrap_file_payload(payload_filename, payload_bytes)
         try:
             encrypted = encrypt_chain(payload_bytes, stego_key, steps)
         except Exception as e:
