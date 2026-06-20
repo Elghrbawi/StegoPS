@@ -77,6 +77,8 @@ def _b64_to_tmp(b64_str, suffix='.png'):
     raw  = base64.b64decode(b64_str)
     if raw[:2] == b'\xff\xd8':
         suffix = '.jpg'
+    elif raw[:4] == b'RIFF' and raw[8:12] == b'WAVE':
+        suffix = '.wav'   # WAV files must keep .wav so _ensure_wav skips re-encoding
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     tmp.write(raw); tmp.flush(); tmp.close()
     return tmp.name
