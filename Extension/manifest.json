@@ -1,12 +1,13 @@
 {
   "manifest_version": 2,
   "name": "StegOps",
-  "version": "2.0.0",
-  "description": "good stuff.",
+  "version": "3.1.0",
+  "description": "DCT/LSB steganography for WhatsApp Web.",
   "permissions": [
     "activeTab",
     "storage",
     "contextMenus",
+    "tabs",
     "https://web.whatsapp.com/*"
   ],
   "background": {
